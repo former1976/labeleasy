@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(mkdir -p /Users/jensandersen/Projects/labeleasy)",
+      "Read(//Users/jensandersen/Projects/**)",
+      "Bash(npx create-next-app@latest . --typescript --tailwind --app --no-src-dir --no-import-alias --yes)",
+      "Bash(rm:*)",
+      "Bash(npm cache:*)",
+      "Bash(sudo npm:*)",
+      "Bash(vercel --version)",
+      "Bash(vercel whoami:*)",
+      "Bash(npm install:*)",
+      "Bash(npx shadcn@latest init -d)"
+    ]
+  }
+}
