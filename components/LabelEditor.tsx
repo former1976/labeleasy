@@ -415,40 +415,8 @@ export default function LabelEditor({ fileData }: LabelEditorProps) {
           <ShapeSelector selected={shape} onChange={setShape} />
           <div className="border-t border-white/10" />
           <MaterialSelector selected={material} onChange={setMaterial} />
-          <div className="flex flex-col gap-2">
-            <p className="text-white/40 text-xs uppercase tracking-wider">Billedjustering</p>
-            {!imageEditMode ? (
-              <button
-                onClick={() => setImageEditMode(true)}
-                className="w-full text-sm px-3 py-2 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-white/70 hover:text-white transition-all flex items-center gap-2"
-              >
-                <span>✏️</span> Rediger billede
-              </button>
-            ) : (
-              <div className="flex flex-col gap-2">
-                <div className="text-xs text-blue-400 bg-blue-500/10 border border-blue-500/20 rounded-lg px-2 py-1.5 leading-relaxed">
-                  Træk billede • Scroll for at zoome
-                </div>
-                <button
-                  onClick={() => { setImageOffset({ x: 0, y: 0 }); setImageScale(1); }}
-                  className="w-full text-xs px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-white/50 hover:text-white transition-all"
-                >
-                  Nulstil position
-                </button>
-                <button
-                  onClick={() => setImageEditMode(false)}
-                  className="w-full text-sm px-3 py-2 rounded-lg bg-blue-500 hover:bg-blue-600 text-white font-medium transition-all"
-                >
-                  ✓ Færdig
-                </button>
-              </div>
-            )}
-          </div>
-
           <div className="mt-auto pt-4 border-t border-white/10">
-            <p className="text-white/30 text-xs leading-relaxed">
-              {imageEditMode ? "💡 Træk for at flytte • Scroll for at zoome" : "💡 Træk for at rotere • Scroll for at zoome"}
-            </p>
+            <p className="text-white/30 text-xs leading-relaxed">💡 Træk for at rotere • Scroll for at zoome</p>
           </div>
         </div>
 
@@ -561,6 +529,36 @@ export default function LabelEditor({ fileData }: LabelEditorProps) {
                 <div className="absolute inset-0 glitter-effect opacity-25" style={{ borderRadius: shape !== "diecut" ? shapeRadius : undefined, pointerEvents: "none", mixBlendMode: "overlay" }} />
               )}
             </div>
+          </div>
+
+          {/* Floating image edit toolbar */}
+          <div className="absolute bottom-14 left-1/2 -translate-x-1/2 flex items-center gap-2">
+            {!imageEditMode ? (
+              <button
+                onClick={() => setImageEditMode(true)}
+                className="flex items-center gap-1.5 bg-black/60 hover:bg-black/80 backdrop-blur-sm border border-white/15 text-white/80 hover:text-white text-xs px-3 py-1.5 rounded-full transition-all"
+              >
+                ✏️ Rediger billede
+              </button>
+            ) : (
+              <>
+                <div className="bg-blue-500/20 border border-blue-400/40 text-blue-300 text-xs px-3 py-1.5 rounded-full backdrop-blur-sm">
+                  Træk for at flytte • Scroll for at zoome
+                </div>
+                <button
+                  onClick={() => { setImageOffset({ x: 0, y: 0 }); setImageScale(1); }}
+                  className="bg-black/60 hover:bg-black/80 backdrop-blur-sm border border-white/15 text-white/60 hover:text-white text-xs px-3 py-1.5 rounded-full transition-all"
+                >
+                  Nulstil
+                </button>
+                <button
+                  onClick={() => setImageEditMode(false)}
+                  className="bg-blue-500 hover:bg-blue-600 text-white text-xs font-medium px-3 py-1.5 rounded-full transition-all"
+                >
+                  ✓ Færdig
+                </button>
+              </>
+            )}
           </div>
 
           {/* Status bar */}
