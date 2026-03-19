@@ -122,9 +122,12 @@ export async function generatePrintPDF({
   page.pushOperators(op("f"), op("Q")); // fill, restore
 
   // ── 2. Clip to INNER shape → draw artwork at full size → restore ────────────
-  // Clip to the inner (inset) shape so the white backing shows as a border ring.
-  // The image is drawn at full sticker size and the inner clip masks it cleanly.
-  const clipOps = shapePath(shape, imgX, imgY, imgW, imgH, diecuPoints);
+  // For standard shapes: clip to inner (inset) box so white backing shows as border ring.
+  // For diecut: clip to FULL sticker box — the polygon points are normalized to the full
+  // canvas so they must map to (BLEED, BLEED, W, HH), not the inset inner box.
+  const clipOps = shape === "diecut"
+    ? shapePath(shape, BLEED, BLEED, W, HH, diecuPoints)
+    : shapePath(shape, imgX, imgY, imgW, imgH, diecuPoints);
   page.pushOperators(op("q")); // save state
   pushOps(page, clipOps);
   page.pushOperators(op("W"), op("n")); // set clipping path, end path
