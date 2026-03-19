@@ -159,6 +159,7 @@ async function generateDieCutContour(src: string, aspect: number): Promise<Conto
 export default function LabelEditor({ fileData }: LabelEditorProps) {
   const router = useRouter();
   const canvasRef = useRef<HTMLDivElement>(null);
+  const stickerSizeRef = useRef({ w: 0, h: 0 });
 
   const [shape, setShape] = useState<Shape>("rounded");
   const [material, setMaterial] = useState<Material>("vinyl");
@@ -180,6 +181,10 @@ export default function LabelEditor({ fileData }: LabelEditorProps) {
   const [contourPoints, setContourPoints] = useState<{ x: number; y: number }[]>([]);
   const [contourLoading, setContourLoading] = useState(false);
   const [pdfGenerating, setPdfGenerating] = useState(false);
+  const [imageEditMode, setImageEditMode] = useState(false);
+  const [imageOffset, setImageOffset] = useState({ x: 0, y: 0 }); // percent
+  const [imageScale, setImageScale] = useState(1);
+  const [imagePanStart, setImagePanStart] = useState<{ x: number; y: number; ox: number; oy: number } | null>(null);
 
   const isPdf = fileData.type === "application/pdf";
   const previewSrc = isPdf && pdfPageUrl ? pdfPageUrl : fileData.preview;
@@ -223,29 +228,41 @@ export default function LabelEditor({ fileData }: LabelEditorProps) {
 
   // Mouse tilt
   const handleCanvasMouseMove = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
-    if (isDragging) return;
+    if (isDragging || imageEditMode) return;
     const rect = e.currentTarget.getBoundingClientRect();
     const nx = (e.clientX - rect.left - rect.width / 2) / (rect.width / 2);
     const ny = (e.clientY - rect.top - rect.height / 2) / (rect.height / 2);
     setTilt({ x: ny * -14, y: nx * 14 });
-  }, [isDragging]);
+  }, [isDragging, imageEditMode]);
   const handleCanvasMouseLeave = useCallback(() => setTilt({ x: 0, y: 0 }), []);
 
-  // Drag to rotate
+  // Drag to rotate / pan image
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
-    setIsDragging(true);
-    setDragStart({ x: e.clientX, y: e.clientY });
-    setDragStartRotation(rotation);
-    setTilt({ x: 0, y: 0 });
-  }, [rotation]);
+    if (imageEditMode) {
+      setImagePanStart({ x: e.clientX, y: e.clientY, ox: imageOffset.x, oy: imageOffset.y });
+    } else {
+      setIsDragging(true);
+      setDragStart({ x: e.clientX, y: e.clientY });
+      setDragStartRotation(rotation);
+      setTilt({ x: 0, y: 0 });
+    }
+  }, [rotation, imageEditMode, imageOffset]);
 
   const handleMouseMove = useCallback((e: MouseEvent) => {
-    if (!isDragging || !dragStart) return;
-    setRotation(Math.max(-180, Math.min(180, Math.round(dragStartRotation + (e.clientX - dragStart.x) * 0.5))));
-  }, [isDragging, dragStart, dragStartRotation]);
+    if (imagePanStart) {
+      const dx = e.clientX - imagePanStart.x;
+      const dy = e.clientY - imagePanStart.y;
+      setImageOffset({
+        x: imagePanStart.ox + (dx / stickerSizeRef.current.w) * 100,
+        y: imagePanStart.oy + (dy / stickerSizeRef.current.h) * 100,
+      });
+    } else if (isDragging && dragStart) {
+      setRotation(Math.max(-180, Math.min(180, Math.round(dragStartRotation + (e.clientX - dragStart.x) * 0.5))));
+    }
+  }, [imagePanStart, isDragging, dragStart, dragStartRotation]);
 
-  const handleMouseUp = useCallback(() => { setIsDragging(false); setDragStart(null); }, []);
+  const handleMouseUp = useCallback(() => { setIsDragging(false); setDragStart(null); setImagePanStart(null); }, []);
 
   useEffect(() => {
     window.addEventListener("mousemove", handleMouseMove);
@@ -255,12 +272,25 @@ export default function LabelEditor({ fileData }: LabelEditorProps) {
 
   const touchRef = useRef<{ x: number; rot: number } | null>(null);
   const handleTouchStart = useCallback((e: React.TouchEvent) => {
-    touchRef.current = { x: e.touches[0].clientX, rot: rotation };
-  }, [rotation]);
+    if (imageEditMode) {
+      const t = e.touches[0];
+      setImagePanStart({ x: t.clientX, y: t.clientY, ox: imageOffset.x, oy: imageOffset.y });
+    } else {
+      touchRef.current = { x: e.touches[0].clientX, rot: rotation };
+    }
+  }, [rotation, imageEditMode, imageOffset]);
   const handleTouchMove = useCallback((e: React.TouchEvent) => {
-    if (!touchRef.current) return;
-    setRotation(Math.max(-180, Math.min(180, Math.round(touchRef.current.rot + (e.touches[0].clientX - touchRef.current.x) * 0.5))));
-  }, []);
+    if (imageEditMode && imagePanStart) {
+      const t = e.touches[0];
+      setImageOffset({
+        x: imagePanStart.ox + ((t.clientX - imagePanStart.x) / stickerSizeRef.current.w) * 100,
+        y: imagePanStart.oy + ((t.clientY - imagePanStart.y) / stickerSizeRef.current.h) * 100,
+      });
+    } else if (touchRef.current) {
+      setRotation(Math.max(-180, Math.min(180, Math.round(touchRef.current.rot + (e.touches[0].clientX - touchRef.current.x) * 0.5))));
+    }
+  }, [imageEditMode, imagePanStart]);
+  const handleTouchEnd = useCallback(() => { setImagePanStart(null); }, []);
 
   const getMaterialOverlay = (): React.CSSProperties => {
     if (material === "holografisk") return { background: "linear-gradient(135deg,rgba(255,0,128,.35),rgba(255,140,0,.35),rgba(64,224,208,.35),rgba(123,47,190,.35))", backgroundSize: "400% 400%", mixBlendMode: "color" as const };
@@ -320,6 +350,7 @@ export default function LabelEditor({ fileData }: LabelEditorProps) {
   const baseSize = Math.min(380, Math.max(120, width * 25));
   const stickerW = baseSize * zoom;
   const stickerH = baseSize * (height / width) * zoom;
+  stickerSizeRef.current = { w: stickerW, h: stickerH };
 
   return (
     <div className="h-screen bg-[#1a1a1a] flex flex-col overflow-hidden">
@@ -384,8 +415,40 @@ export default function LabelEditor({ fileData }: LabelEditorProps) {
           <ShapeSelector selected={shape} onChange={setShape} />
           <div className="border-t border-white/10" />
           <MaterialSelector selected={material} onChange={setMaterial} />
+          <div className="flex flex-col gap-2">
+            <p className="text-white/40 text-xs uppercase tracking-wider">Billedjustering</p>
+            {!imageEditMode ? (
+              <button
+                onClick={() => setImageEditMode(true)}
+                className="w-full text-sm px-3 py-2 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-white/70 hover:text-white transition-all flex items-center gap-2"
+              >
+                <span>✏️</span> Rediger billede
+              </button>
+            ) : (
+              <div className="flex flex-col gap-2">
+                <div className="text-xs text-blue-400 bg-blue-500/10 border border-blue-500/20 rounded-lg px-2 py-1.5 leading-relaxed">
+                  Træk billede • Scroll for at zoome
+                </div>
+                <button
+                  onClick={() => { setImageOffset({ x: 0, y: 0 }); setImageScale(1); }}
+                  className="w-full text-xs px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-white/50 hover:text-white transition-all"
+                >
+                  Nulstil position
+                </button>
+                <button
+                  onClick={() => setImageEditMode(false)}
+                  className="w-full text-sm px-3 py-2 rounded-lg bg-blue-500 hover:bg-blue-600 text-white font-medium transition-all"
+                >
+                  ✓ Færdig
+                </button>
+              </div>
+            )}
+          </div>
+
           <div className="mt-auto pt-4 border-t border-white/10">
-            <p className="text-white/30 text-xs leading-relaxed">💡 Træk for at rotere • Scroll for at zoome</p>
+            <p className="text-white/30 text-xs leading-relaxed">
+              {imageEditMode ? "💡 Træk for at flytte • Scroll for at zoome" : "💡 Træk for at rotere • Scroll for at zoome"}
+            </p>
           </div>
         </div>
 
@@ -396,7 +459,14 @@ export default function LabelEditor({ fileData }: LabelEditorProps) {
           style={{ ...getCanvasStyle(), perspective: "800px" }}
           onMouseMove={handleCanvasMouseMove}
           onMouseLeave={handleCanvasMouseLeave}
-          onWheel={(e) => { e.preventDefault(); setZoom((z) => Math.max(0.3, Math.min(3, z + (e.deltaY > 0 ? -0.05 : 0.05)))); }}
+          onWheel={(e) => {
+            e.preventDefault();
+            if (imageEditMode) {
+              setImageScale((s) => Math.max(0.5, Math.min(5, s + (e.deltaY > 0 ? -0.05 : 0.05))));
+            } else {
+              setZoom((z) => Math.max(0.3, Math.min(3, z + (e.deltaY > 0 ? -0.05 : 0.05))));
+            }
+          }}
         >
           {/* Dot grid */}
           <div className="absolute inset-0 pointer-events-none" style={{ backgroundImage: "radial-gradient(circle,rgba(0,0,0,0.1) 1px,transparent 1px)", backgroundSize: "24px 24px" }} />
@@ -419,12 +489,13 @@ export default function LabelEditor({ fileData }: LabelEditorProps) {
               transition: isDragging ? "none" : "transform 0.12s ease-out",
               transformStyle: "preserve-3d",
               position: "relative", userSelect: "none",
-              cursor: isDragging ? "grabbing" : "grab",
+              cursor: imageEditMode ? (imagePanStart ? "grabbing" : "move") : (isDragging ? "grabbing" : "grab"),
               filter: "drop-shadow(0 14px 36px rgba(0,0,0,0.22)) drop-shadow(0 3px 8px rgba(0,0,0,0.14))",
             }}
             onMouseDown={handleMouseDown}
             onTouchStart={handleTouchStart}
             onTouchMove={handleTouchMove}
+            onTouchEnd={handleTouchEnd}
           >
             {/* Die-cut contour overlay (pink line — shown OUTSIDE clip) */}
             {shape === "diecut" && contourUrl && (
@@ -448,12 +519,31 @@ export default function LabelEditor({ fileData }: LabelEditorProps) {
 
               {/* Artwork */}
               {previewSrc ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={previewSrc} alt="Label preview" className="absolute inset-0 w-full h-full object-contain"
-                  style={{ padding: shape === "diecut" ? "2%" : "4%", pointerEvents: "none", filter: material === "gennemsigtig" ? "opacity(.9)" : "none", borderRadius: shape !== "diecut" ? shapeRadius : undefined }}
-                  draggable={false} />
+                <div
+                  className="absolute inset-0"
+                  style={{ padding: shape === "diecut" ? "2%" : "4%", pointerEvents: "none", overflow: "hidden" }}
+                >
+                  <div
+                    className="relative w-full h-full"
+                    style={{
+                      transform: `translate(${imageOffset.x}%, ${imageOffset.y}%) scale(${imageScale})`,
+                      transformOrigin: "center center",
+                      transition: imagePanStart ? "none" : "transform 0.05s ease-out",
+                    }}
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={previewSrc} alt="Label preview" className="absolute inset-0 w-full h-full object-contain"
+                      style={{ filter: material === "gennemsigtig" ? "opacity(.9)" : "none", borderRadius: shape !== "diecut" ? shapeRadius : undefined }}
+                      draggable={false} />
+                  </div>
+                </div>
               ) : (
                 <div className="absolute inset-0 flex items-center justify-center text-gray-300 text-sm">Indlæser...</div>
+              )}
+
+              {/* Image edit mode ring */}
+              {imageEditMode && (
+                <div className="absolute inset-0 pointer-events-none" style={{ boxShadow: "inset 0 0 0 2px rgba(96,165,250,0.8)", borderRadius: shape !== "diecut" ? shapeRadius : undefined, zIndex: 25 }} />
               )}
 
               {/* Material overlay */}
