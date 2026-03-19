@@ -69,6 +69,48 @@ interface ContourResult {
   points: { x: number; y: number }[]; // normalized 0–1 (canvas coords, y-down)
 }
 
+// Render image with pan/zoom transform applied to a canvas (for PDF export)
+async function renderTransformedImage(
+  src: string,
+  canvasW: number,
+  canvasH: number,
+  paddingFraction: number,
+  offset: { x: number; y: number },
+  scale: number
+): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement("canvas");
+      canvas.width = canvasW;
+      canvas.height = canvasH;
+      const ctx = canvas.getContext("2d")!;
+
+      // object-contain fit within full canvas (generatePrintPDF adds its own padding)
+      const imgAr = img.naturalWidth / img.naturalHeight;
+      const areaAr = canvasW / canvasH;
+      const fitW = imgAr > areaAr ? canvasW : canvasH * imgAr;
+      const fitH = imgAr > areaAr ? canvasW / imgAr : canvasH;
+
+      // CSS translate % is relative to the padded area in the UI
+      const areaW = canvasW * (1 - 2 * paddingFraction);
+      const areaH = canvasH * (1 - 2 * paddingFraction);
+      const tx = (offset.x / 100) * areaW;
+      const ty = (offset.y / 100) * areaH;
+
+      ctx.save();
+      ctx.translate(canvasW / 2 + tx, canvasH / 2 + ty);
+      ctx.scale(scale, scale);
+      ctx.drawImage(img, -fitW / 2, -fitH / 2, fitW, fitH);
+      ctx.restore();
+
+      resolve(canvas.toDataURL("image/png"));
+    };
+    img.onerror = reject;
+    img.src = src;
+  });
+}
+
 async function generateDieCutContour(src: string, aspect: number): Promise<ContourResult> {
   return new Promise((resolve) => {
     const img = new Image();
@@ -322,8 +364,23 @@ export default function LabelEditor({ fileData }: LabelEditorProps) {
     setPdfGenerating(true);
     try {
       const { generatePrintPDF } = await import("@/lib/generatePDF");
-      // For PDF uploads: use original data (preserves vector quality) instead of rasterized preview
-      const sourceDataUrl = isPdf ? fileData.preview : previewSrc;
+      const hasTransform = imageOffset.x !== 0 || imageOffset.y !== 0 || imageScale !== 1;
+      let sourceDataUrl: string;
+      if (isPdf && !hasTransform) {
+        // Original PDF, no transform — preserve vector quality
+        sourceDataUrl = fileData.preview;
+      } else if (hasTransform) {
+        // Pre-render with pan/zoom transform at high resolution
+        const LONG = 2000;
+        const aspect = height / width;
+        const cW = aspect >= 1 ? Math.round(LONG / aspect) : LONG;
+        const cH = aspect >= 1 ? LONG : Math.round(LONG * aspect);
+        const padding = shape === "diecut" ? 0.02 : 0.04;
+        const rasterSrc = isPdf && pdfPageUrl ? pdfPageUrl : previewSrc;
+        sourceDataUrl = await renderTransformedImage(rasterSrc, cW, cH, padding, imageOffset, imageScale);
+      } else {
+        sourceDataUrl = previewSrc;
+      }
       const bytes = await generatePrintPDF({
         imageDataUrl: sourceDataUrl,
         widthCm: width,
