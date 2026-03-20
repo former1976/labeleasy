@@ -524,6 +524,7 @@ export default function LabelEditor({ fileData }: LabelEditorProps) {
         imagePadding,
         shape,
         diecuPoints: shape === "diecut" ? contourPoints : undefined,
+        whiteUnderprint: material === "gennemsigtig" && whiteUnderprint,
       });
       const url = URL.createObjectURL(new Blob([bytes as BlobPart], { type: "application/pdf" }));
       const a = document.createElement("a");

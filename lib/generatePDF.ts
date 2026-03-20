@@ -1,4 +1,4 @@
-import { PDFDocument, PDFName, PDFNumber, PDFDict, PDFOperator } from "pdf-lib";
+import { PDFDocument, PDFNumber, PDFOperator } from "pdf-lib";
 import type { Shape } from "@/components/ShapeSelector";
 
 const CM_TO_PT = 10 * (72 / 25.4);
@@ -91,6 +91,7 @@ export async function generatePrintPDF({
   shape,
   diecuPoints,
   imagePadding,
+  whiteUnderprint,
 }: {
   imageDataUrl: string;
   widthCm: number;
@@ -98,6 +99,7 @@ export async function generatePrintPDF({
   shape: Shape;
   diecuPoints?: { x: number; y: number }[];
   imagePadding?: number; // 0 = no extra padding (already baked into pre-rendered image)
+  whiteUnderprint?: boolean; // adds white spot color page for transparent stickers
 }): Promise<Uint8Array> {
   const W = widthCm * CM_TO_PT;
   const HH = heightCm * CM_TO_PT;
@@ -164,53 +166,43 @@ export async function generatePrintPDF({
     page.pushOperators(op("Q")); // restore (removes clip)
   }
 
-  // ── 3. Stans spot color cut line ────────────────────────────────────────────
-  const tintFn = pdfDoc.context.obj({
-    FunctionType: 2,
-    Domain: [0, 1],
-    C0: [0, 0, 0, 0],
-    C1: [0, 1, 0, 0],
-    N: 1,
-  });
-  const stansCS = pdfDoc.context.obj([
-    PDFName.of("Separation"),
-    PDFName.of("Stans"),
-    PDFName.of("DeviceCMYK"),
-    tintFn,
-  ]);
-  const gState = pdfDoc.context.obj({
-    Type: PDFName.of("ExtGState"),
-    OP: true,
-    OPM: 1,
-  });
-
-  const resources = page.node.Resources()!;
-  let csDict = resources.get(PDFName.of("ColorSpace")) as PDFDict | undefined;
-  if (!csDict) {
-    const d = pdfDoc.context.obj({});
-    resources.set(PDFName.of("ColorSpace"), d);
-    csDict = d as PDFDict;
-  }
-  (csDict as PDFDict).set(PDFName.of("Stans"), stansCS);
-
-  let gsDict = resources.get(PDFName.of("ExtGState")) as PDFDict | undefined;
-  if (!gsDict) {
-    const d = pdfDoc.context.obj({});
-    resources.set(PDFName.of("ExtGState"), d);
-    gsDict = d as PDFDict;
-  }
-  (gsDict as PDFDict).set(PDFName.of("GS_OP"), gState);
-
+  // ── 3. Stans cut line (RGB pink — visible in all PDF viewers) ───────────────
   const stansOps = shapePath(shape, BLEED, BLEED, W, HH, diecuPoints);
   page.pushOperators(
     op("q"),
-    op("gs", [PDFName.of("GS_OP")]),
-    op("CS", [PDFName.of("Stans")]),
-    op("SCN", [PDFNumber.of(1)]),
-    op("w", [PDFNumber.of(0.5)])
+    op("RG", [PDFNumber.of(0.91), PDFNumber.of(0.08), PDFNumber.of(0.63)]), // #E8149E pink
+    op("w", [PDFNumber.of(0.75)])
   );
   pushOps(page, stansOps);
   page.pushOperators(op("S"), op("Q"));
+
+  // ── 4. White spot color page (for transparent stickers) ─────────────────────
+  if (whiteUnderprint) {
+    const pageW = W + 2 * BLEED;
+    const pageH = HH + 2 * BLEED;
+    const page2 = pdfDoc.addPage([pageW, pageH]);
+
+    // Gray background — signals this is the white spot color layer
+    page2.pushOperators(op("q"), op("g", [pt(0.82)]));
+    pushOps(page2, rectPath(0, 0, pageW, pageH));
+    page2.pushOperators(op("f"), op("Q"));
+
+    // Black filled sticker shape = "print white ink here"
+    const whiteLayerOps = shapePath(shape, BLEED, BLEED, W, HH, diecuPoints);
+    page2.pushOperators(op("q"), op("g", [pt(0)]));
+    pushOps(page2, whiteLayerOps);
+    page2.pushOperators(op("f"), op("Q"));
+
+    // Same pink cut line
+    const stansOps2 = shapePath(shape, BLEED, BLEED, W, HH, diecuPoints);
+    page2.pushOperators(
+      op("q"),
+      op("RG", [PDFNumber.of(0.91), PDFNumber.of(0.08), PDFNumber.of(0.63)]),
+      op("w", [PDFNumber.of(0.75)])
+    );
+    pushOps(page2, stansOps2);
+    page2.pushOperators(op("S"), op("Q"));
+  }
 
   return pdfDoc.save();
 }
