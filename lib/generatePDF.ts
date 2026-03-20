@@ -101,7 +101,8 @@ export async function generatePrintPDF({
 }): Promise<Uint8Array> {
   const W = widthCm * CM_TO_PT;
   const HH = heightCm * CM_TO_PT;
-  const BLEED = 0.3 * CM_TO_PT; // 3 mm bleed
+  const BLEED = 0.3 * CM_TO_PT; // 3 mm page bleed margin
+  const PRINT_BLEED = 0.2 * CM_TO_PT; // 2 mm image bleed (extends past cut line)
 
   // Image padding — use provided value, or default to shape-based (4% / 2%)
   const PAD = imagePadding !== undefined ? imagePadding : (shape === "diecut" ? 0.02 : 0.04);
@@ -123,29 +124,45 @@ export async function generatePrintPDF({
   pushOps(page, backingOps);
   page.pushOperators(op("f"), op("Q")); // fill, restore
 
-  // ── 2. Clip to INNER shape → draw artwork at full size → restore ────────────
-  // For standard shapes: clip to inner (inset) box so white backing shows as border ring.
-  // For diecut: clip to FULL sticker box — the polygon points are normalized to the full
-  // canvas so they must map to (BLEED, BLEED, W, HH), not the inset inner box.
-  const clipOps = shape === "diecut"
-    ? shapePath(shape, BLEED, BLEED, W, HH, diecuPoints)
-    : shapePath(shape, imgX, imgY, imgW, imgH, diecuPoints);
-  page.pushOperators(op("q")); // save state
-  pushOps(page, clipOps);
-  page.pushOperators(op("W"), op("n")); // set clipping path, end path
-
+  // ── 2. Draw artwork with bleed ───────────────────────────────────────────────
   const bytes = dataUrlToBytes(imageDataUrl);
-  if (imageDataUrl.startsWith("data:application/pdf")) {
-    const srcDoc = await PDFDocument.load(bytes);
-    const [embeddedPage] = await pdfDoc.embedPages([srcDoc.getPages()[0]]);
-    page.drawPage(embeddedPage, { x: BLEED, y: BLEED, width: W, height: HH });
-  } else {
-    const isPng = imageDataUrl.startsWith("data:image/png");
-    const img = isPng ? await pdfDoc.embedPng(bytes) : await pdfDoc.embedJpg(bytes);
-    page.drawImage(img, { x: BLEED, y: BLEED, width: W, height: HH });
-  }
 
-  page.pushOperators(op("Q")); // restore (removes clip)
+  if (imagePadding === 0) {
+    // Pre-rendered canvas: padding already baked in. Extend 2 mm past cut line
+    // for bleed — no clip needed (image scales uniformly, content fills bleed zone).
+    const bX = BLEED - PRINT_BLEED;
+    const bY = BLEED - PRINT_BLEED;
+    const bW = W + 2 * PRINT_BLEED;
+    const bH = HH + 2 * PRINT_BLEED;
+    if (imageDataUrl.startsWith("data:application/pdf")) {
+      const srcDoc = await PDFDocument.load(bytes);
+      const [embeddedPage] = await pdfDoc.embedPages([srcDoc.getPages()[0]]);
+      page.drawPage(embeddedPage, { x: bX, y: bY, width: bW, height: bH });
+    } else {
+      const isPng = imageDataUrl.startsWith("data:image/png");
+      const img = isPng ? await pdfDoc.embedPng(bytes) : await pdfDoc.embedJpg(bytes);
+      page.drawImage(img, { x: bX, y: bY, width: bW, height: bH });
+    }
+  } else {
+    // Vector PDF or padded image: clip to shape, draw at sticker size.
+    // For diecut: clip to FULL sticker box (polygon is normalized to full canvas).
+    const clipOps = shape === "diecut"
+      ? shapePath(shape, BLEED, BLEED, W, HH, diecuPoints)
+      : shapePath(shape, imgX, imgY, imgW, imgH, diecuPoints);
+    page.pushOperators(op("q"));
+    pushOps(page, clipOps);
+    page.pushOperators(op("W"), op("n"));
+    if (imageDataUrl.startsWith("data:application/pdf")) {
+      const srcDoc = await PDFDocument.load(bytes);
+      const [embeddedPage] = await pdfDoc.embedPages([srcDoc.getPages()[0]]);
+      page.drawPage(embeddedPage, { x: BLEED, y: BLEED, width: W, height: HH });
+    } else {
+      const isPng = imageDataUrl.startsWith("data:image/png");
+      const img = isPng ? await pdfDoc.embedPng(bytes) : await pdfDoc.embedJpg(bytes);
+      page.drawImage(img, { x: BLEED, y: BLEED, width: W, height: HH });
+    }
+    page.pushOperators(op("Q")); // restore (removes clip)
+  }
 
   // ── 3. Stans spot color cut line ────────────────────────────────────────────
   const tintFn = pdfDoc.context.obj({
