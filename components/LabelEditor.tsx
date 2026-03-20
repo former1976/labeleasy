@@ -683,7 +683,7 @@ export default function LabelEditor({ fileData }: LabelEditorProps) {
                   borderRadius: shape !== "diecut" ? shapeRadius : undefined,
                   ...(
                     ((material === "gennemsigtig" || material === "holografisk") && !whiteUnderprint) ||
-                    processedImageUrl !== null
+                    (processedImageUrl !== null && !(material === "gennemsigtig" && whiteUnderprint))
                       ? {
                           backgroundImage: "linear-gradient(45deg,#bbb 25%,transparent 25%),linear-gradient(-45deg,#bbb 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#bbb 75%),linear-gradient(-45deg,transparent 75%,#bbb 75%)",
                           backgroundSize: "10px 10px",
