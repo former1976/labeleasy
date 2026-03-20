@@ -468,7 +468,7 @@ export default function LabelEditor({ fileData }: LabelEditorProps) {
 
   const getMaterialOverlay = (): React.CSSProperties => {
     if (material === "holografisk") return { background: "linear-gradient(135deg,rgba(255,0,128,.35),rgba(255,140,0,.35),rgba(64,224,208,.35),rgba(123,47,190,.35))", backgroundSize: "400% 400%", mixBlendMode: "color" as const };
-    if (material === "gennemsigtig") return { background: "rgba(255,255,255,.18)", backdropFilter: "blur(0.5px)" };
+    if (material === "gennemsigtig") return whiteUnderprint ? {} : { background: "rgba(255,255,255,.12)" };
     if (material === "glitter") return { background: "linear-gradient(45deg,rgba(255,215,0,.4) 25%,rgba(255,250,205,.5) 50%,rgba(255,215,0,.4) 75%)", backgroundSize: "200% 200%", mixBlendMode: "overlay" as const };
     if (material === "sølv") return { background: "linear-gradient(145deg,rgba(255,255,255,.85) 0%,rgba(190,190,190,.12) 15%,rgba(255,255,255,.7) 30%,rgba(150,150,150,.12) 45%,rgba(255,255,255,.75) 60%,rgba(175,175,175,.1) 75%,rgba(255,255,255,.6) 90%,rgba(155,155,155,.18) 100%)", mixBlendMode: "overlay" as const };
     if (material === "kraftpapir") return { background: "rgba(160,100,40,.18)", mixBlendMode: "multiply" as const };
@@ -711,7 +711,7 @@ export default function LabelEditor({ fileData }: LabelEditorProps) {
                   >
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img src={processedImageUrl ?? previewSrc} alt="Label preview" className="absolute inset-0 w-full h-full object-contain"
-                      style={{ filter: material === "gennemsigtig" ? "opacity(0.7)" : "none", borderRadius: shape !== "diecut" ? shapeRadius : undefined }}
+                      style={{ filter: (material === "gennemsigtig" && !whiteUnderprint) ? "opacity(0.7)" : "none", borderRadius: shape !== "diecut" ? shapeRadius : undefined }}
                       draggable={false} />
                   </div>
                 </div>
@@ -746,8 +746,8 @@ export default function LabelEditor({ fileData }: LabelEditorProps) {
                   <div className="absolute inset-0 opacity-30" style={{ borderRadius: shape !== "diecut" ? shapeRadius : undefined, pointerEvents: "none", mixBlendMode: "multiply", background: "radial-gradient(ellipse at 50% 50%, transparent 55%, rgba(80,80,80,0.6) 100%)" }} />
                 </>
               )}
-              {material === "gennemsigtig" && (
-                /* Glass specular highlight */
+              {material === "gennemsigtig" && !whiteUnderprint && (
+                /* Glass specular highlight — only when no white underprint */
                 <div className="absolute inset-0 pointer-events-none" style={{ borderRadius: shape !== "diecut" ? shapeRadius : undefined, background: "linear-gradient(135deg, rgba(255,255,255,0.45) 0%, transparent 45%, rgba(255,255,255,0.12) 100%)" }} />
               )}
               {material === "kraftpapir" && (
