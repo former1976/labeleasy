@@ -90,19 +90,21 @@ export async function generatePrintPDF({
   heightCm,
   shape,
   diecuPoints,
+  imagePadding,
 }: {
   imageDataUrl: string;
   widthCm: number;
   heightCm: number;
   shape: Shape;
   diecuPoints?: { x: number; y: number }[];
+  imagePadding?: number; // 0 = no extra padding (already baked into pre-rendered image)
 }): Promise<Uint8Array> {
   const W = widthCm * CM_TO_PT;
   const HH = heightCm * CM_TO_PT;
   const BLEED = 0.3 * CM_TO_PT; // 3 mm bleed
 
-  // Image padding — matches editor CSS padding (4% for most, 2% for diecut)
-  const PAD = shape === "diecut" ? 0.02 : 0.04;
+  // Image padding — use provided value, or default to shape-based (4% / 2%)
+  const PAD = imagePadding !== undefined ? imagePadding : (shape === "diecut" ? 0.02 : 0.04);
   const imgX = BLEED + W * PAD;
   const imgY = BLEED + HH * PAD;
   const imgW = W * (1 - 2 * PAD);

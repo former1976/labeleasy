@@ -86,20 +86,26 @@ async function renderTransformedImage(
       canvas.height = canvasH;
       const ctx = canvas.getContext("2d")!;
 
-      // object-contain fit within full canvas (generatePrintPDF adds its own padding)
-      const imgAr = img.naturalWidth / img.naturalHeight;
-      const areaAr = canvasW / canvasH;
-      const fitW = imgAr > areaAr ? canvasW : canvasH * imgAr;
-      const fitH = imgAr > areaAr ? canvasW / imgAr : canvasH;
+      // White backing (matches editor white backing)
+      ctx.fillStyle = "white";
+      ctx.fillRect(0, 0, canvasW, canvasH);
 
-      // CSS translate % is relative to the padded area in the UI
-      const areaW = canvasW * (1 - 2 * paddingFraction);
-      const areaH = canvasH * (1 - 2 * paddingFraction);
+      // object-contain fit within PADDED area (matches CSS in the editor exactly)
+      const padX = canvasW * paddingFraction;
+      const padY = canvasH * paddingFraction;
+      const areaW = canvasW - 2 * padX;
+      const areaH = canvasH - 2 * padY;
+      const imgAr = img.naturalWidth / img.naturalHeight;
+      const areaAr = areaW / areaH;
+      const fitW = imgAr > areaAr ? areaW : areaH * imgAr;
+      const fitH = imgAr > areaAr ? areaW / imgAr : areaH;
+
+      // Transform origin = center of padded area; translate % relative to padded area
       const tx = (offset.x / 100) * areaW;
       const ty = (offset.y / 100) * areaH;
 
       ctx.save();
-      ctx.translate(canvasW / 2 + tx, canvasH / 2 + ty);
+      ctx.translate(padX + areaW / 2 + tx, padY + areaH / 2 + ty);
       ctx.scale(scale, scale);
       ctx.drawImage(img, -fitW / 2, -fitH / 2, fitW, fitH);
       ctx.restore();
@@ -364,13 +370,16 @@ export default function LabelEditor({ fileData }: LabelEditorProps) {
     setPdfGenerating(true);
     try {
       const { generatePrintPDF } = await import("@/lib/generatePDF");
+      // Always pre-render raster images so PDF exactly matches the preview.
+      // PDF uploads without transform keep vector quality via original data.
       const hasTransform = imageOffset.x !== 0 || imageOffset.y !== 0 || imageScale !== 1;
       let sourceDataUrl: string;
+      let imagePadding: number | undefined;
       if (isPdf && !hasTransform) {
-        // Original PDF, no transform — preserve vector quality
-        sourceDataUrl = fileData.preview;
-      } else if (hasTransform) {
-        // Pre-render with pan/zoom transform at high resolution
+        sourceDataUrl = fileData.preview; // vector PDF, no transform — preserve quality
+        imagePadding = undefined;
+      } else {
+        // Pre-render: bakes white backing + padding + transform into canvas image
         const LONG = 2000;
         const aspect = height / width;
         const cW = aspect >= 1 ? Math.round(LONG / aspect) : LONG;
@@ -378,13 +387,13 @@ export default function LabelEditor({ fileData }: LabelEditorProps) {
         const padding = shape === "diecut" ? 0.02 : 0.04;
         const rasterSrc = isPdf && pdfPageUrl ? pdfPageUrl : previewSrc;
         sourceDataUrl = await renderTransformedImage(rasterSrc, cW, cH, padding, imageOffset, imageScale);
-      } else {
-        sourceDataUrl = previewSrc;
+        imagePadding = 0; // padding is baked in — don't add another white ring in PDF
       }
       const bytes = await generatePrintPDF({
         imageDataUrl: sourceDataUrl,
         widthCm: width,
         heightCm: height,
+        imagePadding,
         shape,
         diecuPoints: shape === "diecut" ? contourPoints : undefined,
       });
