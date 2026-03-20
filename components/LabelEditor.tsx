@@ -546,7 +546,7 @@ export default function LabelEditor({ fileData }: LabelEditorProps) {
               {previewSrc ? (
                 <div
                   className="absolute inset-0"
-                  style={{ padding: shape === "diecut" ? "2%" : "4%", pointerEvents: "none", overflow: "hidden" }}
+                  style={{ padding: shape === "diecut" ? "2%" : "4%", pointerEvents: "none", overflow: "hidden", borderRadius: shape !== "diecut" ? shapeRadius : undefined }}
                 >
                   <div
                     className="relative w-full h-full"
