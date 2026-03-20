@@ -11,6 +11,102 @@ interface LabelEditorProps {
   fileData: { name: string; type: string; preview: string };
 }
 
+// ── Color effect utilities ────────────────────────────────────────────────────
+type HexColor = string;
+type ColorEffect = "ingen" | "farve" | "fuld";
+
+function rgbToHex(r: number, g: number, b: number): HexColor {
+  return "#" + [r, g, b].map((v) => v.toString(16).padStart(2, "0")).join("");
+}
+
+function colorDist(r1: number, g1: number, b1: number, r2: number, g2: number, b2: number) {
+  return Math.sqrt((r1 - r2) ** 2 + (g1 - g2) ** 2 + (b1 - b2) ** 2);
+}
+
+function extractDominantColors(src: string, count: number): Promise<HexColor[]> {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      const MAX = 200;
+      const scale = Math.min(1, MAX / Math.max(img.width, img.height));
+      const w = Math.round(img.width * scale);
+      const h = Math.round(img.height * scale);
+      const canvas = document.createElement("canvas");
+      canvas.width = w; canvas.height = h;
+      const ctx = canvas.getContext("2d")!;
+      ctx.drawImage(img, 0, 0, w, h);
+      const { data } = ctx.getImageData(0, 0, w, h);
+
+      // Bucket into 16-level bins, skip near-white (background) and transparent
+      const buckets = new Map<string, { count: number; r: number; g: number; b: number }>();
+      for (let i = 0; i < data.length; i += 4) {
+        const r = data[i], g = data[i + 1], b = data[i + 2], a = data[i + 3];
+        if (a < 128 || (r > 240 && g > 240 && b > 240)) continue;
+        const key = `${r >> 4},${g >> 4},${b >> 4}`;
+        const e = buckets.get(key);
+        if (e) { e.count++; e.r += r; e.g += g; e.b += b; }
+        else buckets.set(key, { count: 1, r, g, b });
+      }
+
+      const sorted = [...buckets.values()].sort((a, b) => b.count - a.count);
+      const result: HexColor[] = [];
+      for (const bucket of sorted) {
+        if (result.length >= count) break;
+        const r = Math.round(bucket.r / bucket.count);
+        const g = Math.round(bucket.g / bucket.count);
+        const b = Math.round(bucket.b / bucket.count);
+        const tooClose = result.some((hex) =>
+          colorDist(r, g, b, parseInt(hex.slice(1, 3), 16), parseInt(hex.slice(3, 5), 16), parseInt(hex.slice(5, 7), 16)) < 45
+        );
+        if (!tooClose) result.push(rgbToHex(r, g, b));
+      }
+      // Always include white as the first color (white underprint control)
+      resolve(["#ffffff", ...result].slice(0, count));
+    };
+    img.src = src;
+  });
+}
+
+function applyColorEffects(
+  src: string,
+  dominantColors: HexColor[],
+  effects: Record<HexColor, ColorEffect>
+): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement("canvas");
+      canvas.width = img.width; canvas.height = img.height;
+      const ctx = canvas.getContext("2d")!;
+      ctx.drawImage(img, 0, 0);
+      const id = ctx.getImageData(0, 0, img.width, img.height);
+      const d = id.data;
+
+      const parsed = dominantColors.map((hex) => ({
+        r: parseInt(hex.slice(1, 3), 16),
+        g: parseInt(hex.slice(3, 5), 16),
+        b: parseInt(hex.slice(5, 7), 16),
+        effect: effects[hex] ?? "ingen",
+      }));
+
+      for (let i = 0; i < d.length; i += 4) {
+        if (d[i + 3] < 64) continue;
+        let minDist = Infinity, nearestEffect: ColorEffect = "ingen";
+        for (const c of parsed) {
+          const dist = colorDist(d[i], d[i + 1], d[i + 2], c.r, c.g, c.b);
+          if (dist < minDist) { minDist = dist; nearestEffect = c.effect; }
+        }
+        if (nearestEffect === "fuld") d[i + 3] = 0;
+        else if (nearestEffect === "farve") d[i + 3] = Math.round(d[i + 3] * 0.4);
+      }
+      ctx.putImageData(id, 0, 0);
+      resolve(canvas.toDataURL("image/png"));
+    };
+    img.onerror = reject;
+    img.src = src;
+  });
+}
+
 function calculatePrice(w: number, h: number, qty: number, mat: Material, lam: "glossy" | "mat") {
   let base = w * h * 0.12;
   if (qty >= 1000) base *= 0.45;
@@ -233,6 +329,11 @@ export default function LabelEditor({ fileData }: LabelEditorProps) {
   const [imageOffset, setImageOffset] = useState({ x: 0, y: 0 }); // percent
   const [imageScale, setImageScale] = useState(1);
   const [imagePanStart, setImagePanStart] = useState<{ x: number; y: number; ox: number; oy: number } | null>(null);
+  const [whiteUnderprint, setWhiteUnderprint] = useState(true);
+  const [dominantColors, setDominantColors] = useState<HexColor[]>([]);
+  const [colorEffects, setColorEffects] = useState<Record<HexColor, ColorEffect>>({});
+  const [processedImageUrl, setProcessedImageUrl] = useState<string | null>(null);
+  const [openColorPicker, setOpenColorPicker] = useState<HexColor | null>(null);
 
   const isPdf = fileData.type === "application/pdf";
   const previewSrc = isPdf && pdfPageUrl ? pdfPageUrl : fileData.preview;
@@ -270,6 +371,31 @@ export default function LabelEditor({ fileData }: LabelEditorProps) {
       setContourLoading(false);
     });
   }, [shape, previewSrc, width, height]);
+
+  // Extract dominant colors when gennemsigtig material is selected
+  useEffect(() => {
+    if (material !== "gennemsigtig" || !previewSrc) {
+      setDominantColors([]); setColorEffects({}); setProcessedImageUrl(null);
+      return;
+    }
+    extractDominantColors(previewSrc, 6).then(setDominantColors);
+  }, [material, previewSrc]);
+
+  // Re-process image whenever color effects change
+  useEffect(() => {
+    if (!previewSrc || dominantColors.length === 0) return;
+    const hasEffects = Object.values(colorEffects).some((e) => e !== "ingen");
+    if (!hasEffects) { setProcessedImageUrl(null); return; }
+    applyColorEffects(previewSrc, dominantColors, colorEffects).then(setProcessedImageUrl);
+  }, [previewSrc, dominantColors, colorEffects]);
+
+  const toggleColorEffect = useCallback((hex: HexColor) => {
+    setColorEffects((prev) => {
+      const cur = prev[hex] ?? "ingen";
+      const next: ColorEffect = cur === "ingen" ? "farve" : cur === "farve" ? "fuld" : "ingen";
+      return { ...prev, [hex]: next };
+    });
+  }, []);
 
   const price = calculatePrice(width, height, quantity, material, laminate);
   const shapeRadius = getShapeRadius(shape);
@@ -342,8 +468,10 @@ export default function LabelEditor({ fileData }: LabelEditorProps) {
 
   const getMaterialOverlay = (): React.CSSProperties => {
     if (material === "holografisk") return { background: "linear-gradient(135deg,rgba(255,0,128,.35),rgba(255,140,0,.35),rgba(64,224,208,.35),rgba(123,47,190,.35))", backgroundSize: "400% 400%", mixBlendMode: "color" as const };
-    if (material === "gennemsigtig") return { background: "rgba(255,255,255,.08)", backdropFilter: "blur(1px)" };
+    if (material === "gennemsigtig") return { background: "rgba(255,255,255,.18)", backdropFilter: "blur(0.5px)" };
     if (material === "glitter") return { background: "linear-gradient(45deg,rgba(255,215,0,.4) 25%,rgba(255,250,205,.5) 50%,rgba(255,215,0,.4) 75%)", backgroundSize: "200% 200%", mixBlendMode: "overlay" as const };
+    if (material === "sølv") return { background: "linear-gradient(145deg,rgba(255,255,255,.85) 0%,rgba(190,190,190,.12) 15%,rgba(255,255,255,.7) 30%,rgba(150,150,150,.12) 45%,rgba(255,255,255,.75) 60%,rgba(175,175,175,.1) 75%,rgba(255,255,255,.6) 90%,rgba(155,155,155,.18) 100%)", mixBlendMode: "overlay" as const };
+    if (material === "kraftpapir") return { background: "rgba(160,100,40,.18)", mixBlendMode: "multiply" as const };
     return {};
   };
 
@@ -385,7 +513,7 @@ export default function LabelEditor({ fileData }: LabelEditorProps) {
         const cW = aspect >= 1 ? Math.round(LONG / aspect) : LONG;
         const cH = aspect >= 1 ? LONG : Math.round(LONG * aspect);
         const padding = shape === "diecut" ? 0.02 : 0.04;
-        const rasterSrc = isPdf && pdfPageUrl ? pdfPageUrl : previewSrc;
+        const rasterSrc = processedImageUrl ?? (isPdf && pdfPageUrl ? pdfPageUrl : previewSrc);
         sourceDataUrl = await renderTransformedImage(rasterSrc, cW, cH, padding, imageOffset, imageScale);
         imagePadding = 0; // padding is baked in — don't add another white ring in PDF
       }
@@ -548,8 +676,24 @@ export default function LabelEditor({ fileData }: LabelEditorProps) {
                 ? { WebkitMaskImage: `url(${maskUrl})`, maskImage: `url(${maskUrl})`, WebkitMaskSize: "100% 100%", maskSize: "100% 100%" }
                 : { overflow: "hidden" }
             }>
-              {/* White backing */}
-              <div className="absolute inset-0 bg-white" style={{ borderRadius: shape !== "diecut" ? shapeRadius : undefined }} />
+              {/* White backing — checker when transparent effects are active or underprint is off */}
+              <div
+                className="absolute inset-0"
+                style={{
+                  borderRadius: shape !== "diecut" ? shapeRadius : undefined,
+                  ...(
+                    ((material === "gennemsigtig" || material === "holografisk") && !whiteUnderprint) ||
+                    processedImageUrl !== null
+                      ? {
+                          backgroundImage: "linear-gradient(45deg,#bbb 25%,transparent 25%),linear-gradient(-45deg,#bbb 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#bbb 75%),linear-gradient(-45deg,transparent 75%,#bbb 75%)",
+                          backgroundSize: "10px 10px",
+                          backgroundPosition: "0 0,0 5px,5px -5px,-5px 0",
+                          backgroundColor: "#e4e4e4",
+                        }
+                      : { backgroundColor: "white" }
+                  ),
+                }}
+              />
 
               {/* Artwork */}
               {previewSrc ? (
@@ -566,8 +710,8 @@ export default function LabelEditor({ fileData }: LabelEditorProps) {
                     }}
                   >
                     {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={previewSrc} alt="Label preview" className="absolute inset-0 w-full h-full object-contain"
-                      style={{ filter: material === "gennemsigtig" ? "opacity(.9)" : "none", borderRadius: shape !== "diecut" ? shapeRadius : undefined }}
+                    <img src={processedImageUrl ?? previewSrc} alt="Label preview" className="absolute inset-0 w-full h-full object-contain"
+                      style={{ filter: material === "gennemsigtig" ? "opacity(0.7)" : "none", borderRadius: shape !== "diecut" ? shapeRadius : undefined }}
                       draggable={false} />
                   </div>
                 </div>
@@ -594,11 +738,38 @@ export default function LabelEditor({ fileData }: LabelEditorProps) {
               {material === "glitter" && (
                 <div className="absolute inset-0 glitter-effect opacity-25" style={{ borderRadius: shape !== "diecut" ? shapeRadius : undefined, pointerEvents: "none", mixBlendMode: "overlay" }} />
               )}
+              {material === "sølv" && (
+                <>
+                  {/* Brushed metal lines */}
+                  <div className="absolute inset-0 opacity-45" style={{ borderRadius: shape !== "diecut" ? shapeRadius : undefined, pointerEvents: "none", mixBlendMode: "screen", backgroundImage: "repeating-linear-gradient(97deg, transparent 0px, transparent 1px, rgba(255,255,255,0.9) 1px, rgba(255,255,255,0.9) 1.5px, transparent 1.5px, transparent 4px)" }} />
+                  {/* Edge darkening for depth */}
+                  <div className="absolute inset-0 opacity-30" style={{ borderRadius: shape !== "diecut" ? shapeRadius : undefined, pointerEvents: "none", mixBlendMode: "multiply", background: "radial-gradient(ellipse at 50% 50%, transparent 55%, rgba(80,80,80,0.6) 100%)" }} />
+                </>
+              )}
+              {material === "gennemsigtig" && (
+                /* Glass specular highlight */
+                <div className="absolute inset-0 pointer-events-none" style={{ borderRadius: shape !== "diecut" ? shapeRadius : undefined, background: "linear-gradient(135deg, rgba(255,255,255,0.45) 0%, transparent 45%, rgba(255,255,255,0.12) 100%)" }} />
+              )}
+              {material === "kraftpapir" && (
+                <div className="absolute inset-0 opacity-30" style={{ borderRadius: shape !== "diecut" ? shapeRadius : undefined, pointerEvents: "none", mixBlendMode: "multiply", background: "radial-gradient(ellipse at 60% 40%, rgba(180,110,40,.4) 0%, transparent 70%)" }} />
+              )}
             </div>
           </div>
 
           {/* Floating image edit toolbar */}
           <div className="absolute bottom-14 left-1/2 -translate-x-1/2 flex items-center gap-2">
+            {(material === "gennemsigtig" || material === "holografisk") && !imageEditMode && (
+              <button
+                onClick={() => setWhiteUnderprint((v) => !v)}
+                className={`flex items-center gap-1.5 backdrop-blur-sm border text-xs px-3 py-1.5 rounded-full transition-all ${
+                  whiteUnderprint
+                    ? "bg-white/20 border-white/40 text-white"
+                    : "bg-black/60 border-white/15 text-white/60"
+                }`}
+              >
+                {whiteUnderprint ? "⬜ Hvid underprint: TIL" : "◻️ Hvid underprint: FRA"}
+              </button>
+            )}
             {!imageEditMode ? (
               <button
                 onClick={() => setImageEditMode(true)}
@@ -626,6 +797,81 @@ export default function LabelEditor({ fileData }: LabelEditorProps) {
               </>
             )}
           </div>
+
+          {/* Color effect panel — popover style */}
+          {material === "gennemsigtig" && dominantColors.length > 0 && (
+            <div className="absolute bottom-16 left-1/2 -translate-x-1/2 flex items-center gap-2">
+              {dominantColors.map((hex) => {
+                const effect = colorEffects[hex] ?? "ingen";
+                const isOpen = openColorPicker === hex;
+                const isWhite = hex === "#ffffff";
+                const checkerBg = "linear-gradient(45deg,#ccc 25%,transparent 25%),linear-gradient(-45deg,#ccc 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#ccc 75%),linear-gradient(-45deg,transparent 75%,#ccc 75%)";
+                return (
+                  <div key={hex} className="relative">
+                    {/* Popover */}
+                    {isOpen && (
+                      <>
+                        {/* Backdrop */}
+                        <div className="fixed inset-0 z-40" onClick={() => setOpenColorPicker(null)} />
+                        <div className="absolute bottom-12 left-1/2 -translate-x-1/2 z-50 bg-white rounded-2xl shadow-2xl overflow-hidden w-52" style={{ border: "1px solid rgba(0,0,0,0.08)" }}>
+                          {(["ingen", "farve", "fuld"] as ColorEffect[]).map((opt, i) => (
+                            <button
+                              key={opt}
+                              onClick={() => { setColorEffects((p) => ({ ...p, [hex]: opt })); setOpenColorPicker(null); }}
+                              className={`w-full flex items-center gap-3 px-4 py-3 hover:bg-gray-50 transition-colors ${i > 0 ? "border-t border-gray-100" : ""}`}
+                            >
+                              {/* Color preview in this state */}
+                              <div className="w-10 h-10 rounded-full flex-shrink-0 shadow-sm overflow-hidden" style={{
+                                backgroundImage: isWhite || opt === "fuld" ? checkerBg : undefined,
+                                backgroundSize: "8px 8px",
+                                backgroundPosition: "0 0,0 4px,4px -4px,-4px 0",
+                                backgroundColor: isWhite ? "#fff" : "#e4e4e4",
+                              }}>
+                                <div className="w-full h-full rounded-full" style={{
+                                  backgroundColor: hex,
+                                  opacity: opt === "ingen" ? 1 : opt === "farve" ? 0.45 : 0,
+                                }} />
+                              </div>
+                              <span className={`text-sm text-gray-800 ${effect === opt ? "font-bold" : "font-normal"}`}>
+                                {opt === "ingen" ? "Ingen effekt" : opt === "farve" ? "Farveeffekt" : "Fuld effekt"}
+                              </span>
+                            </button>
+                          ))}
+                          {/* Popover arrow */}
+                          <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 w-4 h-4 bg-white rotate-45 border-b border-r border-gray-100" />
+                        </div>
+                      </>
+                    )}
+                    {/* Swatch button */}
+                    <button
+                      onClick={() => setOpenColorPicker(isOpen ? null : hex)}
+                      className="relative w-9 h-9 rounded-full transition-transform hover:scale-110 active:scale-95"
+                      style={{
+                        backgroundImage: isWhite ? checkerBg : undefined,
+                        backgroundSize: isWhite ? "8px 8px" : undefined,
+                        backgroundPosition: isWhite ? "0 0,0 4px,4px -4px,-4px 0" : undefined,
+                        backgroundColor: isWhite ? "#e4e4e4" : hex,
+                        outline: isOpen ? "3px solid white" : effect !== "ingen" ? "3px solid rgba(255,255,255,0.7)" : "2px solid rgba(255,255,255,0.2)",
+                        outlineOffset: "2px",
+                        opacity: effect === "fuld" ? 0.35 : effect === "farve" ? 0.6 : 1,
+                        boxShadow: effect === "ingen"
+                          ? `0 2px 8px ${hex}99, 0 1px 3px rgba(0,0,0,0.3)`
+                          : "0 1px 4px rgba(0,0,0,0.25)",
+                      }}
+                    >
+                      {/* Gloss highlight */}
+                      {effect === "ingen" && (
+                        <div className="absolute inset-0 rounded-full pointer-events-none" style={{
+                          background: "linear-gradient(145deg, rgba(255,255,255,0.45) 0%, rgba(255,255,255,0.1) 40%, transparent 60%)",
+                        }} />
+                      )}
+                      {isWhite && <div className="w-full h-full rounded-full" style={{ backgroundColor: "#fff", opacity: effect === "ingen" ? 1 : effect === "farve" ? 0.45 : 0 }} />}
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
 
           {/* Status bar */}
           <div className="absolute bottom-4 left-1/2 -translate-x-1/2">

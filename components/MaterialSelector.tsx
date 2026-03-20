@@ -1,6 +1,6 @@
 "use client";
 
-export type Material = "vinyl" | "holografisk" | "gennemsigtig" | "glitter";
+export type Material = "vinyl" | "holografisk" | "gennemsigtig" | "glitter" | "sølv" | "kraftpapir";
 
 interface MaterialSelectorProps {
   selected: Material;
@@ -47,13 +47,23 @@ const MATERIALS: {
     priceMultiplier: 1.3,
     preview: (
       <div
-        className="w-full h-full rounded-lg border-2 border-white/40"
+        className="w-full h-full rounded-lg relative overflow-hidden"
         style={{
-          background:
-            "repeating-linear-gradient(45deg, #888 0px, #888 1px, #fff 1px, #fff 8px)",
-          opacity: 0.5,
+          backgroundImage: "linear-gradient(45deg,#bbb 25%,transparent 25%),linear-gradient(-45deg,#bbb 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#bbb 75%),linear-gradient(-45deg,transparent 75%,#bbb 75%)",
+          backgroundSize: "8px 8px",
+          backgroundPosition: "0 0,0 4px,4px -4px,-4px 0",
+          backgroundColor: "#e4e4e4",
         }}
-      />
+      >
+        <div className="absolute inset-0 rounded-lg" style={{
+          background: "rgba(255,255,255,0.38)",
+          backdropFilter: "blur(1px)",
+          border: "1px solid rgba(255,255,255,0.65)",
+        }} />
+        <div className="absolute inset-0 rounded-lg" style={{
+          background: "linear-gradient(135deg, rgba(255,255,255,0.6) 0%, transparent 40%, rgba(255,255,255,0.2) 100%)",
+        }} />
+      </div>
     ),
   },
   {
@@ -71,6 +81,47 @@ const MATERIALS: {
           animation: "glitter 1.5s ease infinite",
         }}
       />
+    ),
+  },
+  {
+    id: "sølv",
+    name: "Sølv",
+    desc: "Børstet aluminium",
+    priceMultiplier: 1.6,
+    preview: (
+      <div
+        className="w-full h-full rounded-lg relative overflow-hidden"
+        style={{
+          background: "linear-gradient(135deg, #b0b0b0 0%, #e8e8e8 18%, #c8c8c8 30%, #f5f5f5 48%, #a8a8a8 62%, #e0e0e0 78%, #c0c0c0 100%)",
+        }}
+      >
+        {/* Brushed metal lines */}
+        <div className="absolute inset-0 rounded-lg" style={{
+          backgroundImage: "repeating-linear-gradient(98deg, transparent 0px, transparent 1px, rgba(255,255,255,0.55) 1px, rgba(255,255,255,0.55) 2px, transparent 2px, transparent 5px)",
+        }} />
+        {/* Specular highlight */}
+        <div className="absolute inset-0 rounded-lg" style={{
+          background: "linear-gradient(135deg, rgba(255,255,255,0.75) 0%, transparent 35%, rgba(255,255,255,0.15) 55%, transparent 75%, rgba(255,255,255,0.4) 100%)",
+        }} />
+      </div>
+    ),
+  },
+  {
+    id: "kraftpapir",
+    name: "Kraftpapir",
+    desc: "Naturlig papirfølelse",
+    priceMultiplier: 1.1,
+    preview: (
+      <div
+        className="w-full h-full rounded-lg"
+        style={{
+          background: "radial-gradient(ellipse at 30% 30%, #c8955a 0%, #b07d45 40%, #9a6a35 100%)",
+        }}
+      >
+        <div className="w-full h-full rounded-lg" style={{
+          background: "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='4' height='4'%3E%3Crect width='4' height='4' fill='none'/%3E%3Cpath d='M0 2 Q2 1 4 2' stroke='rgba(0,0,0,0.06)' fill='none'/%3E%3C/svg%3E\")",
+        }} />
+      </div>
     ),
   },
 ];
