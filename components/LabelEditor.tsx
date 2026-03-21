@@ -668,6 +668,21 @@ export default function LabelEditor({ fileData }: LabelEditorProps) {
             }
           }}
         >
+          {/* SVG filter for contour stroke — feMorphology dilate works on any shape */}
+          <svg width="0" height="0" style={{ position: "absolute" }}>
+            <defs>
+              <filter id="contour-stroke" x="-35%" y="-35%" width="170%" height="170%" colorInterpolationFilters="sRGB">
+                <feMorphology operator="dilate" radius={strokePx} in="SourceAlpha" result="dilated" />
+                <feFlood floodColor="white" result="white" />
+                <feComposite in="white" in2="dilated" operator="in" result="stroke" />
+                <feMerge>
+                  <feMergeNode in="stroke" />
+                  <feMergeNode in="SourceGraphic" />
+                </feMerge>
+              </filter>
+            </defs>
+          </svg>
+
           {/* Dot grid */}
           <div className="absolute inset-0 pointer-events-none" style={{ backgroundImage: "radial-gradient(circle,rgba(0,0,0,0.1) 1px,transparent 1px)", backgroundSize: "24px 24px" }} />
 
@@ -690,32 +705,15 @@ export default function LabelEditor({ fileData }: LabelEditorProps) {
               transformStyle: "preserve-3d",
               position: "relative", userSelect: "none",
               cursor: imageEditMode ? (imagePanStart ? "grabbing" : "move") : (isDragging ? "grabbing" : "grab"),
-              filter: [
-                // Die-cut white stroke: stacked drop-shadows follow the irregular contour
-                strokePx > 0 && shape === "diecut"
-                  ? Array(4).fill(`drop-shadow(0 0 ${Math.ceil(strokePx * 0.55)}px white)`).join(" ")
-                  : "",
-                "drop-shadow(0 14px 36px rgba(0,0,0,0.22)) drop-shadow(0 3px 8px rgba(0,0,0,0.14))",
-              ].filter(Boolean).join(" "),
+              filter: strokePx > 0
+                ? "url(#contour-stroke) drop-shadow(0 14px 36px rgba(0,0,0,0.22)) drop-shadow(0 3px 8px rgba(0,0,0,0.14))"
+                : "drop-shadow(0 14px 36px rgba(0,0,0,0.22)) drop-shadow(0 3px 8px rgba(0,0,0,0.14))",
             }}
             onMouseDown={handleMouseDown}
             onTouchStart={handleTouchStart}
             onTouchMove={handleTouchMove}
             onTouchEnd={handleTouchEnd}
           >
-            {/* White contour stroke — rendered first so it sits behind all sticker content */}
-            {strokePx > 0 && shape !== "diecut" && (
-              <div
-                className="absolute pointer-events-none"
-                style={{
-                  inset: -strokePx,
-                  borderRadius: shapeRadius,
-                  backgroundColor: "white",
-                  boxShadow: "0 0 0 1px rgba(0,0,0,0.07)",
-                }}
-              />
-            )}
-
             {/* Die-cut contour overlay (pink line — shown OUTSIDE clip) */}
             {shape === "diecut" && contourUrl && (
               // eslint-disable-next-line @next/next/no-img-element
