@@ -671,7 +671,7 @@ export default function LabelEditor({ fileData }: LabelEditorProps) {
           {/* SVG filter for contour stroke — feMorphology dilate works on any shape */}
           <svg width="0" height="0" style={{ position: "absolute" }}>
             <defs>
-              <filter id="contour-stroke" x="-35%" y="-35%" width="170%" height="170%" colorInterpolationFilters="sRGB">
+              <filter id="contour-stroke" x="-50%" y="-50%" width="200%" height="200%" colorInterpolationFilters="sRGB">
                 <feMorphology operator="dilate" radius={strokePx} in="SourceAlpha" result="dilated" />
                 <feFlood floodColor="white" result="white" />
                 <feComposite in="white" in2="dilated" operator="in" result="stroke" />
@@ -807,6 +807,18 @@ export default function LabelEditor({ fileData }: LabelEditorProps) {
               )}
               {material === "kraftpapir" && (
                 <div className="absolute inset-0 opacity-30" style={{ borderRadius: shape !== "diecut" ? shapeRadius : undefined, pointerEvents: "none", mixBlendMode: "multiply", background: "radial-gradient(ellipse at 60% 40%, rgba(180,110,40,.4) 0%, transparent 70%)" }} />
+              )}
+
+              {/* Pink cut line — shown on top of white contour stroke for non-diecut */}
+              {contourStroke !== "ingen" && shape !== "diecut" && (
+                <div
+                  className="absolute pointer-events-none"
+                  style={{
+                    inset: 0,
+                    borderRadius: shapeRadius,
+                    boxShadow: "0 0 0 1.5px #E8149E",
+                  }}
+                />
               )}
             </div>
           </div>
