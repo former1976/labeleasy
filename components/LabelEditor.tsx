@@ -334,6 +334,10 @@ export default function LabelEditor({ fileData }: LabelEditorProps) {
   const [colorEffects, setColorEffects] = useState<Record<HexColor, ColorEffect>>({});
   const [processedImageUrl, setProcessedImageUrl] = useState<string | null>(null);
   const [openColorPicker, setOpenColorPicker] = useState<HexColor | null>(null);
+  const [contourStroke, setContourStroke] = useState<"ingen" | "lille" | "mellem" | "stor">("ingen");
+
+  const STROKE_PX: Record<string, number> = { ingen: 0, lille: 5, mellem: 11, stor: 19 };
+  const strokePx = STROKE_PX[contourStroke];
 
   const isPdf = fileData.type === "application/pdf";
   const previewSrc = isPdf && pdfPageUrl ? pdfPageUrl : fileData.preview;
@@ -525,6 +529,7 @@ export default function LabelEditor({ fileData }: LabelEditorProps) {
         shape,
         diecuPoints: shape === "diecut" ? contourPoints : undefined,
         whiteUnderprint: material === "gennemsigtig" && whiteUnderprint,
+        contourStroke,
       });
       const url = URL.createObjectURL(new Blob([bytes as BlobPart], { type: "application/pdf" }));
       const a = document.createElement("a");
@@ -610,6 +615,38 @@ export default function LabelEditor({ fileData }: LabelEditorProps) {
           <ShapeSelector selected={shape} onChange={setShape} />
           <div className="border-t border-white/10" />
           <MaterialSelector selected={material} onChange={setMaterial} />
+          <div className="border-t border-white/10" />
+          {/* Contour stroke selector */}
+          <div className="flex flex-col gap-2">
+            <h3 className="text-xs font-semibold text-white/50 uppercase tracking-wider mb-1">Konturstroke</h3>
+            <div className="grid grid-cols-4 gap-1.5">
+              {(["ingen", "lille", "mellem", "stor"] as const).map((s) => {
+                const borderW = { ingen: 0, lille: 2, mellem: 4, stor: 6 }[s];
+                return (
+                  <button
+                    key={s}
+                    type="button"
+                    onClick={() => setContourStroke(s)}
+                    className={`flex flex-col items-center gap-1.5 py-2.5 rounded-xl border transition-all ${
+                      contourStroke === s
+                        ? "border-[#FFD700] bg-[#FFD700]/10"
+                        : "border-white/10 bg-white/5 hover:border-white/30"
+                    }`}
+                  >
+                    <div className="relative w-7 h-7 flex items-center justify-center">
+                      {borderW > 0 && (
+                        <div className="absolute rounded-md bg-white" style={{ inset: -borderW }} />
+                      )}
+                      <div className="w-7 h-7 rounded-md bg-gray-500/50 relative z-10" />
+                    </div>
+                    <span className={`text-[10px] font-medium ${contourStroke === s ? "text-[#FFD700]" : "text-white/50"}`}>
+                      {s.charAt(0).toUpperCase() + s.slice(1)}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
           <div className="mt-auto pt-4 border-t border-white/10">
             <p className="text-white/30 text-xs leading-relaxed">💡 Træk for at rotere • Scroll for at zoome</p>
           </div>
@@ -660,6 +697,19 @@ export default function LabelEditor({ fileData }: LabelEditorProps) {
             onTouchMove={handleTouchMove}
             onTouchEnd={handleTouchEnd}
           >
+            {/* White contour stroke — rendered first so it sits behind all sticker content */}
+            {strokePx > 0 && shape !== "diecut" && (
+              <div
+                className="absolute pointer-events-none"
+                style={{
+                  inset: -strokePx,
+                  borderRadius: shapeRadius,
+                  backgroundColor: "white",
+                  boxShadow: "0 0 0 1px rgba(0,0,0,0.07)",
+                }}
+              />
+            )}
+
             {/* Die-cut contour overlay (pink line — shown OUTSIDE clip) */}
             {shape === "diecut" && contourUrl && (
               // eslint-disable-next-line @next/next/no-img-element

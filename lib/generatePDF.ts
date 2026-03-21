@@ -92,6 +92,7 @@ export async function generatePrintPDF({
   diecuPoints,
   imagePadding,
   whiteUnderprint,
+  contourStroke,
 }: {
   imageDataUrl: string;
   widthCm: number;
@@ -100,6 +101,7 @@ export async function generatePrintPDF({
   diecuPoints?: { x: number; y: number }[];
   imagePadding?: number; // 0 = no extra padding (already baked into pre-rendered image)
   whiteUnderprint?: boolean; // adds white spot color page for transparent stickers
+  contourStroke?: "ingen" | "lille" | "mellem" | "stor"; // white border around sticker
 }): Promise<Uint8Array> {
   const W = widthCm * CM_TO_PT;
   const HH = heightCm * CM_TO_PT;
@@ -120,7 +122,17 @@ export async function generatePrintPDF({
   // Page = sticker size + bleed on all sides
   const page = pdfDoc.addPage([W + 2 * BLEED, HH + 2 * BLEED]);
 
-  // ── 1. White backing shape (full sticker size) ──────────────────────────────
+  // ── 1. White contour stroke (outside sticker, non-diecut only) ──────────────
+  const STROKE_CM: Record<string, number> = { ingen: 0, lille: 0.1, mellem: 0.2, stor: 0.4 };
+  const strokePt = (STROKE_CM[contourStroke ?? "ingen"] ?? 0) * CM_TO_PT;
+  if (strokePt > 0 && shape !== "diecut") {
+    const strokeOps = shapePath(shape, BLEED - strokePt, BLEED - strokePt, W + 2 * strokePt, HH + 2 * strokePt);
+    page.pushOperators(op("q"), op("g", [pt(1)]));
+    pushOps(page, strokeOps);
+    page.pushOperators(op("f"), op("Q"));
+  }
+
+  // ── 2. White backing shape (full sticker size) ──────────────────────────────
   const backingOps = shapePath(shape, BLEED, BLEED, W, HH, diecuPoints);
   page.pushOperators(op("q"), op("g", [pt(1)])); // save, white fill
   pushOps(page, backingOps);
