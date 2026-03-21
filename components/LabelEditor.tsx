@@ -712,7 +712,7 @@ export default function LabelEditor({ fileData }: LabelEditorProps) {
                   >
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img src={processedImageUrl ?? previewSrc} alt="Label preview" className="absolute inset-0 w-full h-full object-contain"
-                      style={{ filter: (material === "gennemsigtig" && !whiteUnderprint) ? "opacity(0.7)" : "none", borderRadius: shape !== "diecut" ? shapeRadius : undefined }}
+                      style={{ filter: (material === "gennemsigtig" && !whiteUnderprint && !processedImageUrl) ? "opacity(0.7)" : "none", borderRadius: shape !== "diecut" ? shapeRadius : undefined }}
                       draggable={false} />
                   </div>
                 </div>
@@ -747,8 +747,8 @@ export default function LabelEditor({ fileData }: LabelEditorProps) {
                   <div className="absolute inset-0 opacity-30" style={{ borderRadius: shape !== "diecut" ? shapeRadius : undefined, pointerEvents: "none", mixBlendMode: "multiply", background: "radial-gradient(ellipse at 50% 50%, transparent 55%, rgba(80,80,80,0.6) 100%)" }} />
                 </>
               )}
-              {material === "gennemsigtig" && !whiteUnderprint && (
-                /* Glass specular highlight — only when no white underprint */
+              {material === "gennemsigtig" && !whiteUnderprint && !processedImageUrl && (
+                /* Glass specular highlight — only without color effects and no white underprint */
                 <div className="absolute inset-0 pointer-events-none" style={{ borderRadius: shape !== "diecut" ? shapeRadius : undefined, background: "linear-gradient(135deg, rgba(255,255,255,0.45) 0%, transparent 45%, rgba(255,255,255,0.12) 100%)" }} />
               )}
               {material === "kraftpapir" && (
