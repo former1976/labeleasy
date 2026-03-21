@@ -97,7 +97,7 @@ function applyColorEffects(
           if (dist < minDist) { minDist = dist; nearestEffect = c.effect; }
         }
         if (nearestEffect === "fuld") d[i + 3] = 0;
-        else if (nearestEffect === "farve") d[i + 3] = Math.round(d[i + 3] * 0.4);
+        else if (nearestEffect === "farve") d[i + 3] = Math.round(d[i + 3] * 0.5);
       }
       ctx.putImageData(id, 0, 0);
       resolve(canvas.toDataURL("image/png"));
