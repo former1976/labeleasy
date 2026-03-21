@@ -690,7 +690,13 @@ export default function LabelEditor({ fileData }: LabelEditorProps) {
               transformStyle: "preserve-3d",
               position: "relative", userSelect: "none",
               cursor: imageEditMode ? (imagePanStart ? "grabbing" : "move") : (isDragging ? "grabbing" : "grab"),
-              filter: "drop-shadow(0 14px 36px rgba(0,0,0,0.22)) drop-shadow(0 3px 8px rgba(0,0,0,0.14))",
+              filter: [
+                // Die-cut white stroke: stacked drop-shadows follow the irregular contour
+                strokePx > 0 && shape === "diecut"
+                  ? Array(4).fill(`drop-shadow(0 0 ${Math.ceil(strokePx * 0.55)}px white)`).join(" ")
+                  : "",
+                "drop-shadow(0 14px 36px rgba(0,0,0,0.22)) drop-shadow(0 3px 8px rgba(0,0,0,0.14))",
+              ].filter(Boolean).join(" "),
             }}
             onMouseDown={handleMouseDown}
             onTouchStart={handleTouchStart}
