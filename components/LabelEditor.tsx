@@ -120,9 +120,16 @@ function calculatePrice(w: number, h: number, qty: number, mat: Material, lam: "
   return Math.ceil(Math.max(base * matM * lamM, 0.5) * qty);
 }
 
-function getShapeRadius(shape: Shape): string {
+function getShapeRadius(shape: Shape, cornerRadiusMm?: number, stickerPxSize?: number): string {
   if (shape === "circle" || shape === "oval") return "50%";
-  if (shape === "rounded") return "12%";
+  if (shape === "rounded") {
+    if (cornerRadiusMm !== undefined && stickerPxSize !== undefined) {
+      // Convert mm to px relative to sticker display size.
+      // stickerPxSize is the smaller of width/height in px on screen.
+      return `${cornerRadiusMm}mm`;
+    }
+    return "12%";
+  }
   return "3px";
 }
 
@@ -311,11 +318,10 @@ export default function LabelEditor({ fileData }: LabelEditorProps) {
   const [height, setHeight] = useState(10);
   const [quantity, setQuantity] = useState(50);
   const [laminate, setLaminate] = useState<"glossy" | "mat">("glossy");
-  const [rotation, setRotation] = useState(0);
+  const [cornerRadius, setCornerRadius] = useState(3); // mm
   const [zoom, setZoom] = useState(1);
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState<{ x: number; y: number } | null>(null);
-  const [dragStartRotation, setDragStartRotation] = useState(0);
   const [pdfPageUrl, setPdfPageUrl] = useState<string | null>(null);
   const [showUploadOverlay, setShowUploadOverlay] = useState(false);
   const [canvasBg, setCanvasBg] = useState<"light" | "dark" | "checker">("light");
@@ -347,6 +353,7 @@ export default function LabelEditor({ fileData }: LabelEditorProps) {
     let cancelled = false;
     async function renderPdf() {
       try {
+        // Render page to canvas for preview
         const lib = await import("pdfjs-dist");
         lib.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${lib.version}/build/pdf.worker.min.mjs`;
         const pdf = await lib.getDocument(fileData.preview).promise;
@@ -356,6 +363,21 @@ export default function LabelEditor({ fileData }: LabelEditorProps) {
         c.width = vp.width; c.height = vp.height;
         await page.render({ canvasContext: c.getContext("2d")!, viewport: vp, canvas: c }).promise;
         if (!cancelled) setPdfPageUrl(c.toDataURL());
+
+        // Read TrimBox (or MediaBox fallback) and set dimensions
+        const { PDFDocument } = await import("pdf-lib");
+        const base64 = fileData.preview.split(",")[1];
+        const pdfDoc = await PDFDocument.load(base64);
+        const pdfPage = pdfDoc.getPages()[0];
+        const trimBox = pdfPage.getTrimBox();
+        const box = trimBox ?? pdfPage.getMediaBox();
+        const PT_TO_CM = 25.4 / 720; // 1 pt = 25.4/720 cm
+        const wCm = Math.round(box.width * PT_TO_CM * 10) / 10;
+        const hCm = Math.round(box.height * PT_TO_CM * 10) / 10;
+        if (!cancelled && wCm > 0 && hCm > 0) {
+          setWidth(wCm);
+          setHeight(hCm);
+        }
       } catch (e) { console.error(e); }
     }
     renderPdf();
@@ -402,7 +424,6 @@ export default function LabelEditor({ fileData }: LabelEditorProps) {
   }, []);
 
   const price = calculatePrice(width, height, quantity, material, laminate);
-  const shapeRadius = getShapeRadius(shape);
 
   // Mouse tilt
   const handleCanvasMouseMove = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
@@ -414,18 +435,16 @@ export default function LabelEditor({ fileData }: LabelEditorProps) {
   }, [isDragging, imageEditMode]);
   const handleCanvasMouseLeave = useCallback(() => setTilt({ x: 0, y: 0 }), []);
 
-  // Drag to rotate / pan image
+  // Pan image (image edit mode only)
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
     if (imageEditMode) {
       setImagePanStart({ x: e.clientX, y: e.clientY, ox: imageOffset.x, oy: imageOffset.y });
     } else {
       setIsDragging(true);
-      setDragStart({ x: e.clientX, y: e.clientY });
-      setDragStartRotation(rotation);
       setTilt({ x: 0, y: 0 });
     }
-  }, [rotation, imageEditMode, imageOffset]);
+  }, [imageEditMode, imageOffset]);
 
   const handleMouseMove = useCallback((e: MouseEvent) => {
     if (imagePanStart) {
@@ -435,10 +454,8 @@ export default function LabelEditor({ fileData }: LabelEditorProps) {
         x: imagePanStart.ox + (dx / stickerSizeRef.current.w) * 100,
         y: imagePanStart.oy + (dy / stickerSizeRef.current.h) * 100,
       });
-    } else if (isDragging && dragStart) {
-      setRotation(Math.max(-180, Math.min(180, Math.round(dragStartRotation + (e.clientX - dragStart.x) * 0.5))));
     }
-  }, [imagePanStart, isDragging, dragStart, dragStartRotation]);
+  }, [imagePanStart]);
 
   const handleMouseUp = useCallback(() => { setIsDragging(false); setDragStart(null); setImagePanStart(null); }, []);
 
@@ -448,15 +465,15 @@ export default function LabelEditor({ fileData }: LabelEditorProps) {
     return () => { window.removeEventListener("mousemove", handleMouseMove); window.removeEventListener("mouseup", handleMouseUp); };
   }, [handleMouseMove, handleMouseUp]);
 
-  const touchRef = useRef<{ x: number; rot: number } | null>(null);
+  const touchRef = useRef<{ x: number } | null>(null);
   const handleTouchStart = useCallback((e: React.TouchEvent) => {
     if (imageEditMode) {
       const t = e.touches[0];
       setImagePanStart({ x: t.clientX, y: t.clientY, ox: imageOffset.x, oy: imageOffset.y });
     } else {
-      touchRef.current = { x: e.touches[0].clientX, rot: rotation };
+      touchRef.current = { x: e.touches[0].clientX };
     }
-  }, [rotation, imageEditMode, imageOffset]);
+  }, [imageEditMode, imageOffset]);
   const handleTouchMove = useCallback((e: React.TouchEvent) => {
     if (imageEditMode && imagePanStart) {
       const t = e.touches[0];
@@ -464,8 +481,6 @@ export default function LabelEditor({ fileData }: LabelEditorProps) {
         x: imagePanStart.ox + ((t.clientX - imagePanStart.x) / stickerSizeRef.current.w) * 100,
         y: imagePanStart.oy + ((t.clientY - imagePanStart.y) / stickerSizeRef.current.h) * 100,
       });
-    } else if (touchRef.current) {
-      setRotation(Math.max(-180, Math.min(180, Math.round(touchRef.current.rot + (e.touches[0].clientX - touchRef.current.x) * 0.5))));
     }
   }, [imageEditMode, imagePanStart]);
   const handleTouchEnd = useCallback(() => { setImagePanStart(null); }, []);
@@ -509,7 +524,7 @@ export default function LabelEditor({ fileData }: LabelEditorProps) {
       let imagePadding: number | undefined;
       if (isPdf && !hasTransform) {
         sourceDataUrl = fileData.preview; // vector PDF, no transform — preserve quality
-        imagePadding = undefined;
+        imagePadding = 0; // fill to edge — PDF fills the full sticker area
       } else {
         // Pre-render: bakes white backing + padding + transform into canvas image
         const LONG = 2000;
@@ -530,6 +545,7 @@ export default function LabelEditor({ fileData }: LabelEditorProps) {
         diecuPoints: shape === "diecut" ? contourPoints : undefined,
         whiteUnderprint: material === "gennemsigtig" && whiteUnderprint,
         contourStroke,
+        cornerRadiusMm: shape === "rounded" ? cornerRadius : undefined,
       });
       const url = URL.createObjectURL(new Blob([bytes as BlobPart], { type: "application/pdf" }));
       const a = document.createElement("a");
@@ -551,6 +567,15 @@ export default function LabelEditor({ fileData }: LabelEditorProps) {
   const stickerW = baseSize * zoom;
   const stickerH = baseSize * (height / width) * zoom;
   stickerSizeRef.current = { w: stickerW, h: stickerH };
+
+  // Corner radius in px for preview: scale mm → px based on sticker display size
+  // 1 mm = stickerW / (width * 10) px  (width is in cm → *10 = mm)
+  const cornerRadiusPx = shape === "rounded"
+    ? Math.min(cornerRadius * (stickerW / (width * 10)), stickerW / 2, stickerH / 2)
+    : 0;
+  const shapeRadius = shape === "circle" || shape === "oval" ? "50%"
+    : shape === "rounded" ? `${cornerRadiusPx}px`
+    : "3px";
 
   return (
     <div className="h-screen bg-[#1a1a1a] flex flex-col overflow-hidden">
@@ -591,7 +616,7 @@ export default function LabelEditor({ fileData }: LabelEditorProps) {
             <button onClick={() => setZoom((z) => Math.max(0.3, z - 0.1))} className="w-7 h-7 rounded-lg bg-white/10 hover:bg-white/20 text-white flex items-center justify-center text-sm transition-colors">−</button>
             <span className="text-white/50 text-xs w-10 text-center">{Math.round(zoom * 100)}%</span>
             <button onClick={() => setZoom((z) => Math.min(3, z + 0.1))} className="w-7 h-7 rounded-lg bg-white/10 hover:bg-white/20 text-white flex items-center justify-center text-sm transition-colors">+</button>
-            <button onClick={() => { setZoom(1); setRotation(0); }} className="text-white/30 hover:text-white text-xs px-2 py-1 rounded transition-colors">Nulstil</button>
+            <button onClick={() => setZoom(1)} className="text-white/30 hover:text-white text-xs px-2 py-1 rounded transition-colors">Nulstil</button>
           </div>
 
           {/* PDF download */}
@@ -700,7 +725,7 @@ export default function LabelEditor({ fileData }: LabelEditorProps) {
           <div
             style={{
               width: stickerW, height: stickerH,
-              transform: `rotateX(${tilt.x}deg) rotateY(${tilt.y}deg) rotate(${rotation}deg)`,
+              transform: `rotateX(${tilt.x}deg) rotateY(${tilt.y}deg)`,
               transition: isDragging ? "none" : "transform 0.12s ease-out",
               transformStyle: "preserve-3d",
               position: "relative", userSelect: "none",
@@ -754,7 +779,7 @@ export default function LabelEditor({ fileData }: LabelEditorProps) {
               {previewSrc ? (
                 <div
                   className="absolute inset-0"
-                  style={{ padding: shape === "diecut" ? "2%" : "4%", pointerEvents: "none", overflow: "hidden", borderRadius: shape !== "diecut" ? shapeRadius : undefined }}
+                  style={{ padding: isPdf ? 0 : shape === "diecut" ? "2%" : "4%", pointerEvents: "none", overflow: "hidden", borderRadius: shape !== "diecut" ? shapeRadius : undefined }}
                 >
                   <div
                     className="relative w-full h-full"
@@ -952,9 +977,9 @@ export default function LabelEditor({ fileData }: LabelEditorProps) {
         <div className="w-72 bg-[#111] border-l border-white/10 p-4 flex-shrink-0">
           <EditorSidebar
             width={width} height={height} quantity={quantity} laminate={laminate}
-            rotation={rotation} onWidthChange={setWidth} onHeightChange={setHeight}
+            cornerRadius={cornerRadius} onWidthChange={setWidth} onHeightChange={setHeight}
             onQuantityChange={setQuantity} onLaminateChange={setLaminate}
-            onRotationChange={setRotation} material={material} shape={shape}
+            onCornerRadiusChange={setCornerRadius} material={material} shape={shape}
             price={price} onAddToCart={handleAddToCart}
           />
         </div>

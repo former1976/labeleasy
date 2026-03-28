@@ -20,12 +20,12 @@ interface EditorSidebarProps {
   height: number;
   quantity: number;
   laminate: "glossy" | "mat";
-  rotation: number;
+  cornerRadius: number;
   onWidthChange: (v: number) => void;
   onHeightChange: (v: number) => void;
   onQuantityChange: (v: number) => void;
   onLaminateChange: (v: "glossy" | "mat") => void;
-  onRotationChange: (v: number) => void;
+  onCornerRadiusChange: (v: number) => void;
   material: Material;
   shape: Shape;
   price: number;
@@ -37,12 +37,12 @@ export default function EditorSidebar({
   height,
   quantity,
   laminate,
-  rotation,
+  cornerRadius,
   onWidthChange,
   onHeightChange,
   onQuantityChange,
   onLaminateChange,
-  onRotationChange,
+  onCornerRadiusChange,
   material,
   shape,
   price,
@@ -143,25 +143,27 @@ export default function EditorSidebar({
         </div>
       </div>
 
-      {/* Rotation slider */}
-      <div>
-        <h3 className="text-xs font-semibold text-white/50 uppercase tracking-wider mb-3">
-          Rotation
-        </h3>
-        <div className="flex items-center gap-3">
-          <Slider
-            min={-180}
-            max={180}
-            step={1}
-            value={[rotation]}
-            onValueChange={(v) => onRotationChange(Array.isArray(v) ? v[0] : v)}
-            className="flex-1"
-          />
-          <span className="text-white/60 text-xs w-10 text-right">
-            {rotation}°
-          </span>
+      {/* Corner radius — only for rounded shape */}
+      {shape === "rounded" && (
+        <div>
+          <h3 className="text-xs font-semibold text-white/50 uppercase tracking-wider mb-3">
+            Hjørneradius
+          </h3>
+          <div className="flex items-center gap-3">
+            <Slider
+              min={1}
+              max={Math.round(Math.min(width, height) * 10 / 2)}
+              step={0.5}
+              value={[cornerRadius]}
+              onValueChange={(v) => onCornerRadiusChange(Array.isArray(v) ? v[0] : v)}
+              className="flex-1"
+            />
+            <span className="text-white/60 text-xs w-10 text-right">
+              {cornerRadius} mm
+            </span>
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Laminate */}
       <div>

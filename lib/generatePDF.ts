@@ -59,17 +59,24 @@ function pushOps(page: ReturnType<PDFDocument["addPage"]>, ops: PDFOperator[]) {
   }
 }
 
+const MM_TO_PT = 72 / 25.4;
+
 // Build the shape path for a given bounding box (x, y = bottom-left in PDF coords)
 function shapePath(
   shape: Shape,
   x: number, y: number, w: number, h: number,
   diecuPoints?: { x: number; y: number }[],
+  cornerRadiusMm?: number,
 ): PDFOperator[] {
   switch (shape) {
     case "rectangle":
       return rectPath(x, y, w, h);
-    case "rounded":
-      return roundedRectPath(x, y, w, h, Math.min(w, h) * 0.12);
+    case "rounded": {
+      const r = cornerRadiusMm !== undefined
+        ? Math.min(cornerRadiusMm * MM_TO_PT, Math.min(w, h) / 2)
+        : Math.min(w, h) * 0.12;
+      return roundedRectPath(x, y, w, h, r);
+    }
     case "circle":
     case "oval":
       return ellipsePath(x + w / 2, y + h / 2, w / 2, h / 2);
@@ -93,6 +100,7 @@ export async function generatePrintPDF({
   imagePadding,
   whiteUnderprint,
   contourStroke,
+  cornerRadiusMm,
 }: {
   imageDataUrl: string;
   widthCm: number;
@@ -102,6 +110,7 @@ export async function generatePrintPDF({
   imagePadding?: number; // 0 = no extra padding (already baked into pre-rendered image)
   whiteUnderprint?: boolean; // adds white spot color page for transparent stickers
   contourStroke?: "ingen" | "lille" | "mellem" | "stor"; // white border around sticker
+  cornerRadiusMm?: number; // corner radius in mm for rounded shape
 }): Promise<Uint8Array> {
   const W = widthCm * CM_TO_PT;
   const HH = heightCm * CM_TO_PT;
@@ -126,14 +135,14 @@ export async function generatePrintPDF({
   const STROKE_CM: Record<string, number> = { ingen: 0, lille: 0.1, mellem: 0.2, stor: 0.4 };
   const strokePt = (STROKE_CM[contourStroke ?? "ingen"] ?? 0) * CM_TO_PT;
   if (strokePt > 0 && shape !== "diecut") {
-    const strokeOps = shapePath(shape, BLEED - strokePt, BLEED - strokePt, W + 2 * strokePt, HH + 2 * strokePt);
+    const strokeOps = shapePath(shape, BLEED - strokePt, BLEED - strokePt, W + 2 * strokePt, HH + 2 * strokePt, undefined, cornerRadiusMm);
     page.pushOperators(op("q"), op("g", [pt(1)]));
     pushOps(page, strokeOps);
     page.pushOperators(op("f"), op("Q"));
   }
 
   // ── 2. White backing shape (full sticker size) ──────────────────────────────
-  const backingOps = shapePath(shape, BLEED, BLEED, W, HH, diecuPoints);
+  const backingOps = shapePath(shape, BLEED, BLEED, W, HH, diecuPoints, cornerRadiusMm);
   page.pushOperators(op("q"), op("g", [pt(1)])); // save, white fill
   pushOps(page, backingOps);
   page.pushOperators(op("f"), op("Q")); // fill, restore
@@ -161,8 +170,8 @@ export async function generatePrintPDF({
     // Vector PDF or padded image: clip to shape, draw at sticker size.
     // For diecut: clip to FULL sticker box (polygon is normalized to full canvas).
     const clipOps = shape === "diecut"
-      ? shapePath(shape, BLEED, BLEED, W, HH, diecuPoints)
-      : shapePath(shape, imgX, imgY, imgW, imgH, diecuPoints);
+      ? shapePath(shape, BLEED, BLEED, W, HH, diecuPoints, cornerRadiusMm)
+      : shapePath(shape, imgX, imgY, imgW, imgH, diecuPoints, cornerRadiusMm);
     page.pushOperators(op("q"));
     pushOps(page, clipOps);
     page.pushOperators(op("W"), op("n"));
@@ -179,7 +188,7 @@ export async function generatePrintPDF({
   }
 
   // ── 3. Stans cut line (RGB pink — visible in all PDF viewers) ───────────────
-  const stansOps = shapePath(shape, BLEED, BLEED, W, HH, diecuPoints);
+  const stansOps = shapePath(shape, BLEED, BLEED, W, HH, diecuPoints, cornerRadiusMm);
   page.pushOperators(
     op("q"),
     op("RG", [PDFNumber.of(0.91), PDFNumber.of(0.08), PDFNumber.of(0.63)]), // #E8149E pink
@@ -200,13 +209,13 @@ export async function generatePrintPDF({
     page2.pushOperators(op("f"), op("Q"));
 
     // Black filled sticker shape = "print white ink here"
-    const whiteLayerOps = shapePath(shape, BLEED, BLEED, W, HH, diecuPoints);
+    const whiteLayerOps = shapePath(shape, BLEED, BLEED, W, HH, diecuPoints, cornerRadiusMm);
     page2.pushOperators(op("q"), op("g", [pt(0)]));
     pushOps(page2, whiteLayerOps);
     page2.pushOperators(op("f"), op("Q"));
 
     // Same pink cut line
-    const stansOps2 = shapePath(shape, BLEED, BLEED, W, HH, diecuPoints);
+    const stansOps2 = shapePath(shape, BLEED, BLEED, W, HH, diecuPoints, cornerRadiusMm);
     page2.pushOperators(
       op("q"),
       op("RG", [PDFNumber.of(0.91), PDFNumber.of(0.08), PDFNumber.of(0.63)]),
