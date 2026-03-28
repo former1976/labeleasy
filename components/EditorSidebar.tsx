@@ -10,7 +10,7 @@ import { type Shape } from "./ShapeSelector";
 const SHAPE_NAMES: Record<Shape, string> = {
   diecut: "Fritstående",
   circle: "Rund",
-  oval: "Oval",
+  rounded: "Afrundet",
   rectangle: "Firkantet",
 };
 

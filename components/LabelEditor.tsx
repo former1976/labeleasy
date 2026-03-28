@@ -122,7 +122,7 @@ function calculatePrice(w: number, h: number, qty: number, mat: Material, lam: "
 }
 
 function getShapeRadius(shape: Shape): string {
-  if (shape === "circle" || shape === "oval") return "50%";
+  if (shape === "circle") return "50%";
   return "3px";
 }
 
@@ -565,7 +565,8 @@ export default function LabelEditor({ fileData }: LabelEditorProps) {
   const cornerRadiusPx = shape === "rectangle" && cornerRadius > 0
     ? Math.min(cornerRadius * (stickerW / width), stickerW / 2, stickerH / 2)
     : 0;
-  const shapeRadius = shape === "circle" || shape === "oval" ? "50%"
+  const shapeRadius = shape === "circle" ? "50%"
+    : shape === "rounded" ? "12%"
     : shape === "rectangle" && cornerRadiusPx > 0 ? `${cornerRadiusPx}px`
     : "3px";
 

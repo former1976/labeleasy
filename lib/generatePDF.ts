@@ -76,8 +76,9 @@ function shapePath(
       }
       return rectPath(x, y, w, h);
     }
+    case "rounded":
+      return roundedRectPath(x, y, w, h, Math.min(w, h) * 0.12);
     case "circle":
-    case "oval":
       return ellipsePath(x + w / 2, y + h / 2, w / 2, h / 2);
     case "diecut":
       if (diecuPoints && diecuPoints.length > 4) {
