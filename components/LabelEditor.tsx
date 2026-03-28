@@ -108,7 +108,8 @@ function applyColorEffects(
 }
 
 function calculatePrice(w: number, h: number, qty: number, mat: Material, lam: "glossy" | "mat") {
-  let base = w * h * 0.12;
+  // w, h are in mm — convert to cm for pricing
+  let base = (w / 10) * (h / 10) * 0.12;
   if (qty >= 1000) base *= 0.45;
   else if (qty >= 500) base *= 0.55;
   else if (qty >= 250) base *= 0.65;
@@ -120,16 +121,8 @@ function calculatePrice(w: number, h: number, qty: number, mat: Material, lam: "
   return Math.ceil(Math.max(base * matM * lamM, 0.5) * qty);
 }
 
-function getShapeRadius(shape: Shape, cornerRadiusMm?: number, stickerPxSize?: number): string {
+function getShapeRadius(shape: Shape): string {
   if (shape === "circle" || shape === "oval") return "50%";
-  if (shape === "rounded") {
-    if (cornerRadiusMm !== undefined && stickerPxSize !== undefined) {
-      // Convert mm to px relative to sticker display size.
-      // stickerPxSize is the smaller of width/height in px on screen.
-      return `${cornerRadiusMm}mm`;
-    }
-    return "12%";
-  }
   return "3px";
 }
 
@@ -312,10 +305,10 @@ export default function LabelEditor({ fileData }: LabelEditorProps) {
   const canvasRef = useRef<HTMLDivElement>(null);
   const stickerSizeRef = useRef({ w: 0, h: 0 });
 
-  const [shape, setShape] = useState<Shape>("rounded");
+  const [shape, setShape] = useState<Shape>("rectangle");
   const [material, setMaterial] = useState<Material>("vinyl");
-  const [width, setWidth] = useState(10);
-  const [height, setHeight] = useState(10);
+  const [width, setWidth] = useState(100); // mm
+  const [height, setHeight] = useState(100); // mm
   const [quantity, setQuantity] = useState(50);
   const [laminate, setLaminate] = useState<"glossy" | "mat">("glossy");
   const [cornerRadius, setCornerRadius] = useState(3); // mm
@@ -371,12 +364,12 @@ export default function LabelEditor({ fileData }: LabelEditorProps) {
         const pdfPage = pdfDoc.getPages()[0];
         const trimBox = pdfPage.getTrimBox();
         const box = trimBox ?? pdfPage.getMediaBox();
-        const PT_TO_CM = 25.4 / 720; // 1 pt = 25.4/720 cm
-        const wCm = Math.round(box.width * PT_TO_CM * 10) / 10;
-        const hCm = Math.round(box.height * PT_TO_CM * 10) / 10;
-        if (!cancelled && wCm > 0 && hCm > 0) {
-          setWidth(wCm);
-          setHeight(hCm);
+        const PT_TO_MM = 25.4 / 72; // 1 pt = 25.4/72 mm
+        const wMm = Math.round(box.width * PT_TO_MM);
+        const hMm = Math.round(box.height * PT_TO_MM);
+        if (!cancelled && wMm > 0 && hMm > 0) {
+          setWidth(wMm);
+          setHeight(hMm);
         }
       } catch (e) { console.error(e); }
     }
@@ -538,14 +531,14 @@ export default function LabelEditor({ fileData }: LabelEditorProps) {
       }
       const bytes = await generatePrintPDF({
         imageDataUrl: sourceDataUrl,
-        widthCm: width,
-        heightCm: height,
+        widthCm: width / 10,
+        heightCm: height / 10,
         imagePadding,
         shape,
         diecuPoints: shape === "diecut" ? contourPoints : undefined,
         whiteUnderprint: material === "gennemsigtig" && whiteUnderprint,
         contourStroke,
-        cornerRadiusMm: shape === "rounded" ? cornerRadius : undefined,
+        cornerRadiusMm: shape === "rectangle" && cornerRadius > 0 ? cornerRadius : undefined,
       });
       const url = URL.createObjectURL(new Blob([bytes as BlobPart], { type: "application/pdf" }));
       const a = document.createElement("a");
@@ -561,20 +554,19 @@ export default function LabelEditor({ fileData }: LabelEditorProps) {
     }
   };
 
-  const handleAddToCart = () => alert(`✅ Lagt i kurv!\n\n${quantity} stk ${material} (${shape})\n${width}×${height} cm • ${laminate}\nTotal: ${price} kr`);
+  const handleAddToCart = () => alert(`✅ Lagt i kurv!\n\n${quantity} stk ${material} (${shape})\n${width}×${height} mm • ${laminate}\nTotal: ${price} kr`);
 
-  const baseSize = Math.min(380, Math.max(120, width * 25));
+  const baseSize = Math.min(380, Math.max(120, (width / 10) * 25));
   const stickerW = baseSize * zoom;
   const stickerH = baseSize * (height / width) * zoom;
   stickerSizeRef.current = { w: stickerW, h: stickerH };
 
   // Corner radius in px for preview: scale mm → px based on sticker display size
-  // 1 mm = stickerW / (width * 10) px  (width is in cm → *10 = mm)
-  const cornerRadiusPx = shape === "rounded"
-    ? Math.min(cornerRadius * (stickerW / (width * 10)), stickerW / 2, stickerH / 2)
+  const cornerRadiusPx = shape === "rectangle" && cornerRadius > 0
+    ? Math.min(cornerRadius * (stickerW / width), stickerW / 2, stickerH / 2)
     : 0;
   const shapeRadius = shape === "circle" || shape === "oval" ? "50%"
-    : shape === "rounded" ? `${cornerRadiusPx}px`
+    : shape === "rectangle" && cornerRadiusPx > 0 ? `${cornerRadiusPx}px`
     : "3px";
 
   return (

@@ -69,13 +69,12 @@ function shapePath(
   cornerRadiusMm?: number,
 ): PDFOperator[] {
   switch (shape) {
-    case "rectangle":
+    case "rectangle": {
+      if (cornerRadiusMm !== undefined && cornerRadiusMm > 0) {
+        const r = Math.min(cornerRadiusMm * MM_TO_PT, Math.min(w, h) / 2);
+        return roundedRectPath(x, y, w, h, r);
+      }
       return rectPath(x, y, w, h);
-    case "rounded": {
-      const r = cornerRadiusMm !== undefined
-        ? Math.min(cornerRadiusMm * MM_TO_PT, Math.min(w, h) / 2)
-        : Math.min(w, h) * 0.12;
-      return roundedRectPath(x, y, w, h, r);
     }
     case "circle":
     case "oval":

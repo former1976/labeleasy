@@ -1,6 +1,6 @@
 "use client";
 
-export type Shape = "diecut" | "circle" | "oval" | "rounded" | "rectangle";
+export type Shape = "diecut" | "circle" | "oval" | "rectangle";
 
 interface ShapeSelectorProps {
   selected: Shape;
@@ -44,12 +44,6 @@ function ShapeIcon({ id, active }: { id: Shape; active: boolean }) {
           <ellipse cx="14" cy="14" rx="12" ry="8" fill={bg} stroke={fg} strokeWidth="1.5" />
         </svg>
       );
-    case "rounded":
-      return (
-        <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
-          <rect x="2" y="2" width="24" height="24" rx="6" fill={bg} stroke={fg} strokeWidth="1.5" />
-        </svg>
-      );
     case "rectangle":
       return (
         <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
@@ -63,8 +57,7 @@ const SHAPES: { id: Shape; name: string; desc: string }[] = [
   { id: "diecut", name: "Fritstående", desc: "Skæres tæt på motivet" },
   { id: "circle", name: "Rund", desc: "Perfekt cirkel" },
   { id: "oval", name: "Oval", desc: "Aflang ellipse" },
-  { id: "rounded", name: "Afrundet", desc: "Bløde hjørner" },
-  { id: "rectangle", name: "Firkantet", desc: "Skarpe hjørner" },
+  { id: "rectangle", name: "Firkantet", desc: "Skarpe eller afrundede hjørner" },
 ];
 
 export default function ShapeSelector({ selected, onChange }: ShapeSelectorProps) {

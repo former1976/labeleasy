@@ -11,7 +11,6 @@ const SHAPE_NAMES: Record<Shape, string> = {
   diecut: "Fritstående",
   circle: "Rund",
   oval: "Oval",
-  rounded: "Afrundet",
   rectangle: "Firkantet",
 };
 
@@ -60,13 +59,13 @@ export default function EditorSidebar({
         <div className="grid grid-cols-2 gap-3">
           <div>
             <Label className="text-white/70 text-xs mb-1 block">
-              Bredde (cm)
+              Bredde (mm)
             </Label>
             <Input
               type="number"
-              min={1}
-              max={100}
-              step={0.5}
+              min={10}
+              max={1000}
+              step={1}
               value={width}
               onChange={(e) => onWidthChange(parseFloat(e.target.value) || 1)}
               className="bg-white/10 border-white/20 text-white focus:border-[#FFD700] h-9"
@@ -74,13 +73,13 @@ export default function EditorSidebar({
           </div>
           <div>
             <Label className="text-white/70 text-xs mb-1 block">
-              Højde (cm)
+              Højde (mm)
             </Label>
             <Input
               type="number"
-              min={1}
-              max={100}
-              step={0.5}
+              min={10}
+              max={1000}
+              step={1}
               value={height}
               onChange={(e) => onHeightChange(parseFloat(e.target.value) || 1)}
               className="bg-white/10 border-white/20 text-white focus:border-[#FFD700] h-9"
@@ -143,16 +142,16 @@ export default function EditorSidebar({
         </div>
       </div>
 
-      {/* Corner radius — only for rounded shape */}
-      {shape === "rounded" && (
+      {/* Corner radius — only for rectangle shape */}
+      {shape === "rectangle" && (
         <div>
           <h3 className="text-xs font-semibold text-white/50 uppercase tracking-wider mb-3">
             Hjørneradius
           </h3>
           <div className="flex items-center gap-3">
             <Slider
-              min={1}
-              max={Math.round(Math.min(width, height) * 10 / 2)}
+              min={0}
+              max={Math.round(Math.min(width, height) / 2)}
               step={0.5}
               value={[cornerRadius]}
               onValueChange={(v) => onCornerRadiusChange(Array.isArray(v) ? v[0] : v)}
@@ -212,7 +211,7 @@ export default function EditorSidebar({
           <div className="flex justify-between items-center mb-1">
             <span className="text-white/60 text-sm">Størrelse</span>
             <span className="text-white text-sm">
-              {width} × {height} cm
+              {width} × {height} mm
             </span>
           </div>
           <div className="flex justify-between items-center mb-1">
